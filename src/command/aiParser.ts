@@ -1,11 +1,9 @@
 import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
-import type { MLCEngine, InitProgressReport } from '@mlc-ai/web-llm'
 import { ActionType, TreatyKind, UnitType, StructuredAction, type ParseResult } from '@/domain/schemas'
 import type { CommandParser, ParseContext } from './types'
 import { buildResolverIndex, resolveEntity, resolveOrganization, resolveRegionOrOrganizationOrEntity } from './entityResolver'
-
-export const AI_MODEL_ID = 'Qwen2.5-0.5B-Instruct-q4f16_1-MLC'
+import { localAiEngine } from '@/ai/localAiEngine'
 
 /** What we ask the small local model to extract. Names are free text --
  *  grounding them into real entity/region/organization ids is done afterward
@@ -39,78 +37,20 @@ Rules:
 - If you cannot understand the command at all, set action to "unknown".
 - Output ONLY the JSON object, nothing else.`
 
-export type AiEngineStatus = 'unloaded' | 'loading' | 'ready' | 'unavailable' | 'error'
-
-type StatusListener = (status: AiEngineStatus, report?: InitProgressReport) => void
-
 class AiParser implements CommandParser {
   readonly id = 'ai' as const
-  private engine: MLCEngine | null = null
-  private status: AiEngineStatus = 'unloaded'
-  private listeners = new Set<StatusListener>()
-  private loadPromise: Promise<void> | null = null
-
-  supportsWebGpu(): boolean {
-    return typeof navigator !== 'undefined' && 'gpu' in navigator
-  }
 
   isAvailable(): boolean {
-    return this.status === 'ready' && this.engine !== null
-  }
-
-  getStatus(): AiEngineStatus {
-    return this.status
-  }
-
-  onStatusChange(listener: StatusListener): () => void {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
-
-  private setStatus(status: AiEngineStatus, report?: InitProgressReport) {
-    this.status = status
-    for (const listener of this.listeners) listener(status, report)
-  }
-
-  /** Explicitly triggered by the UI (e.g. a settings toggle), never on the
-   *  hot path of parsing a command -- first load downloads ~1GB. */
-  async initialize(): Promise<void> {
-    if (this.status === 'ready') return
-    if (this.loadPromise) return this.loadPromise
-    if (!this.supportsWebGpu()) {
-      this.setStatus('unavailable')
-      return
-    }
-    this.setStatus('loading')
-    this.loadPromise = (async () => {
-      try {
-        const webllm = await import('@mlc-ai/web-llm')
-        this.engine = await webllm.CreateMLCEngine(AI_MODEL_ID, {
-          initProgressCallback: (report) => this.setStatus('loading', report),
-        })
-        this.setStatus('ready')
-      } catch (err) {
-        console.error('Local AI model failed to load', err)
-        this.setStatus('error')
-        this.engine = null
-      } finally {
-        this.loadPromise = null
-      }
-    })()
-    return this.loadPromise
-  }
-
-  unload(): void {
-    this.engine = null
-    this.setStatus(this.supportsWebGpu() ? 'unloaded' : 'unavailable')
+    return localAiEngine.isReady()
   }
 
   async parse(input: string, ctx: ParseContext): Promise<ParseResult> {
-    if (!this.engine) {
+    const engine = localAiEngine.getEngine()
+    if (!engine) {
       return { ok: false, action: null, confidence: 0, raw: input, error: 'Local AI model is not loaded.' }
     }
     try {
-      const completion = await this.engine.chat.completions.create({
+      const completion = await engine.chat.completions.create({
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
           { role: 'user', content: input },

@@ -5,6 +5,7 @@ import { RegionPanel } from './panels/RegionPanel'
 import { NewsPanel } from './panels/NewsPanel'
 import { CommandConsole } from './CommandConsole'
 import { AiStatusBadge } from './AiStatusBadge'
+import { AdvisorPanel } from './AdvisorPanel'
 
 export function GameScreen() {
   const worldState = useGameStore((s) => s.worldState)
@@ -16,6 +17,7 @@ export function GameScreen() {
   const saveNow = useGameStore((s) => s.saveNow)
   const returnToMenu = useGameStore((s) => s.returnToMenu)
   const busy = useGameStore((s) => s.busy)
+  const toggleAdvisor = useGameStore((s) => s.toggleAdvisor)
 
   if (!worldState) return null
 
@@ -32,6 +34,7 @@ export function GameScreen() {
         <span className="turn-label">Turn {worldState.turn}</span>
         <div className="spacer" />
         <AiStatusBadge />
+        <button onClick={toggleAdvisor}>AI Advisor</button>
         <button onClick={() => saveNow()}>Save</button>
         <button onClick={returnToMenu}>Menu</button>
         <button className="primary" onClick={() => endTurn()} disabled={busy}>
@@ -53,6 +56,7 @@ export function GameScreen() {
         </div>
       </div>
       <CommandConsole />
+      <AdvisorPanel />
     </div>
   )
 }

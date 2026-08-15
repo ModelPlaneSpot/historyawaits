@@ -1,5 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie'
 import type { WorldState } from '@/domain/schemas'
+import type { AdvisorState } from '@/ai/advisorChat'
 
 export interface SaveRecord {
   id: string
@@ -9,13 +10,23 @@ export interface SaveRecord {
   state: WorldState
 }
 
+export interface AdvisorRecord {
+  saveId: string
+  state: AdvisorState
+}
+
 class HistoryAwaitsDB extends Dexie {
   saves!: EntityTable<SaveRecord, 'id'>
+  advisorChats!: EntityTable<AdvisorRecord, 'saveId'>
 
   constructor() {
     super('historyawaits')
     this.version(1).stores({
       saves: 'id, savedAt, isAutosave',
+    })
+    this.version(2).stores({
+      saves: 'id, savedAt, isAutosave',
+      advisorChats: 'saveId',
     })
   }
 }
@@ -42,4 +53,14 @@ export async function listSaves(): Promise<SaveRecord[]> {
 
 export async function deleteSave(id: string): Promise<void> {
   await db.saves.delete(id)
+  await db.advisorChats.delete(id)
+}
+
+export async function saveAdvisorState(saveId: string, state: AdvisorState): Promise<void> {
+  await db.advisorChats.put({ saveId, state })
+}
+
+export async function loadAdvisorState(saveId: string): Promise<AdvisorState | null> {
+  const record = await db.advisorChats.get(saveId)
+  return record?.state ?? null
 }

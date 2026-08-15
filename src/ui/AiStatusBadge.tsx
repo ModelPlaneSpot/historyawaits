@@ -1,5 +1,5 @@
 import { useGameStore } from '@/state/gameStore'
-import { aiParser } from '@/command/aiParser'
+import { localAiEngine } from '@/ai/localAiEngine'
 
 const LABELS: Record<string, string> = {
   unloaded: 'Local AI: off',
@@ -13,7 +13,7 @@ export function AiStatusBadge() {
   const aiStatus = useGameStore((s) => s.aiStatus)
   const enableAi = useGameStore((s) => s.enableAi)
 
-  const canEnable = aiStatus === 'unloaded' && aiParser.supportsWebGpu()
+  const canEnable = aiStatus === 'unloaded' && localAiEngine.supportsWebGpu()
 
   return (
     <div className={`ai-status ${aiStatus}`}>

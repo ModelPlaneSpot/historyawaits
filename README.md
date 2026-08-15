@@ -15,6 +15,7 @@ Player command → Local AI (WebGPU, in-browser) → Structured action → Valid
 - The AI never touches world state directly. Both the AI parser and the fallback parser produce the same `StructuredAction` candidate; `src/simulation/validators/actionValidator.ts` is the sole gate that checks legality against live game state and applies it via the simulation engine.
 - The fallback parser (`src/command/fallbackParser.ts`) is the guaranteed path — the game is fully playable with the AI off.
 - The simulation runs in a Web Worker (`src/simulation/worker/`) so UI stays responsive.
+- **AI Advisor** (`src/ui/AdvisorPanel.tsx`, `src/ai/advisorChat.ts`): a free-form chat with the same local model, for discussing strategy, asking "what if" questions, or getting an explanation of why something happened. It's strictly read-only — it only ever reads a compact summary of world state (`src/ai/advisorContext.ts`) to build its prompt and has no function available to it that touches state; to act on its suggestions, the player still types a normal command. Conversation history is saved per-game and auto-summarized once it gets long, so it never grows unbounded.
 - Everything is client-side: no backend, no database. Saves live in the browser's IndexedDB (via Dexie). This is a static site — Render hosts a few MB of app code; the ~1GB AI model (when enabled) is fetched by the player's own browser from Hugging Face's CDN and cached locally, so hosting cost stays flat regardless of how much the game is played.
 
 ## Local AI model
@@ -64,6 +65,7 @@ node scripts/smoke-test-disputed.mjs [baseUrl]    # starting as a disputed entit
 node scripts/smoke-test-commands.mjs [baseUrl]    # command variety (mobilize/treaty/alliance/sanction)
 node scripts/smoke-test-longplay.mjs [baseUrl] 40 # N-turn stability + news generation
 node scripts/smoke-test-ai.mjs [baseUrl]          # local AI enable flow (needs a real GPU to fully succeed)
+node scripts/smoke-test-advisor.mjs [baseUrl]     # AI Advisor panel open/close/enable-prompt flow
 ```
 
 ## Deployment

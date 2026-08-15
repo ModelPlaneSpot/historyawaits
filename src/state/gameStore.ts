@@ -2,8 +2,17 @@ import { create } from 'zustand'
 import type { WorldState } from '@/domain/schemas'
 import { workerClient } from './workerClient'
 import { interpretCommand } from '@/command/commandOrchestrator'
-import { aiParser, type AiEngineStatus } from '@/command/aiParser'
-import { saveGame, loadGame, listSaves, AUTOSAVE_ID, type SaveRecord } from '@/persistence/db'
+import { localAiEngine, type AiEngineStatus } from '@/ai/localAiEngine'
+import { sendAdvisorMessage, emptyAdvisorState, type AdvisorState } from '@/ai/advisorChat'
+import {
+  saveGame,
+  loadGame,
+  listSaves,
+  AUTOSAVE_ID,
+  saveAdvisorState,
+  loadAdvisorState,
+  type SaveRecord,
+} from '@/persistence/db'
 
 export interface LogEntry {
   id: string
@@ -16,12 +25,17 @@ export interface LogEntry {
 interface GameStore {
   screen: 'menu' | 'playing'
   worldState: WorldState | null
+  currentSaveId: string
   selectedEntityId: string | null
   selectedRegionId: string | null
   log: LogEntry[]
   aiStatus: AiEngineStatus
   saves: SaveRecord[]
   busy: boolean
+  advisorState: AdvisorState
+  advisorOpen: boolean
+  advisorBusy: boolean
+  advisorError: string | null
 
   startNewGame: (playerEntityId: string) => Promise<void>
   continueFromSave: (id: string) => Promise<void>
@@ -33,6 +47,8 @@ interface GameStore {
   enableAi: () => Promise<void>
   saveNow: (name?: string) => Promise<void>
   returnToMenu: () => void
+  toggleAdvisor: () => void
+  askAdvisor: (text: string) => Promise<void>
 }
 
 let logCounter = 0
@@ -44,12 +60,17 @@ function makeLogEntry(partial: Omit<LogEntry, 'id'>): LogEntry {
 export const useGameStore = create<GameStore>((set, get) => ({
   screen: 'menu',
   worldState: null,
+  currentSaveId: AUTOSAVE_ID,
   selectedEntityId: null,
   selectedRegionId: null,
   log: [],
-  aiStatus: aiParser.getStatus(),
+  aiStatus: localAiEngine.getStatus(),
   saves: [],
   busy: false,
+  advisorState: emptyAdvisorState(),
+  advisorOpen: false,
+  advisorBusy: false,
+  advisorError: null,
 
   startNewGame: async (playerEntityId: string) => {
     set({ busy: true })
@@ -58,12 +79,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({
         worldState: res.state,
         screen: 'playing',
+        currentSaveId: AUTOSAVE_ID,
         selectedEntityId: playerEntityId,
         selectedRegionId: null,
         log: [makeLogEntry({ turn: 0, kind: 'system', text: `New game started as ${res.state.entities[playerEntityId]?.name}.` })],
+        advisorState: emptyAdvisorState(),
         busy: false,
       })
       await saveGame(res.state, 'Autosave', true)
+      await saveAdvisorState(AUTOSAVE_ID, emptyAdvisorState())
       await get().refreshSaves()
     } else {
       set({ busy: false })
@@ -79,12 +103,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     }
     const res = await workerClient.loadState(state)
     if (res.type === 'STATE') {
+      const advisorState = (await loadAdvisorState(id)) ?? emptyAdvisorState()
       set({
         worldState: res.state,
         screen: 'playing',
+        currentSaveId: id,
         selectedEntityId: res.state.playerEntityId,
         selectedRegionId: null,
         log: [makeLogEntry({ turn: res.state.turn, kind: 'system', text: 'Game loaded.' })],
+        advisorState,
         busy: false,
       })
     } else {
@@ -138,20 +165,42 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectRegion: (id) => set({ selectedRegionId: id }),
 
   enableAi: async () => {
-    await aiParser.initialize()
+    await localAiEngine.initialize()
   },
 
   saveNow: async (name = `Save ${new Date().toLocaleString()}`) => {
-    const { worldState } = get()
+    const { worldState, advisorState } = get()
     if (!worldState) return
-    await saveGame(worldState, name, false)
+    const id = await saveGame(worldState, name, false)
+    await saveAdvisorState(id, advisorState)
+    set({ currentSaveId: id })
     await get().refreshSaves()
   },
 
-  returnToMenu: () => set({ screen: 'menu', worldState: null }),
+  returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false }),
+
+  toggleAdvisor: () => set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null })),
+
+  askAdvisor: async (text: string) => {
+    const { worldState, advisorState, currentSaveId } = get()
+    if (!worldState) return
+    if (!localAiEngine.isReady()) {
+      set({ advisorError: 'The local AI model needs to be enabled first (see the Local AI status in the top bar).' })
+      return
+    }
+    set({ advisorBusy: true, advisorError: null })
+    try {
+      const { state: newState } = await sendAdvisorMessage(worldState, advisorState, text)
+      set({ advisorState: newState, advisorBusy: false })
+      await saveAdvisorState(currentSaveId, newState)
+    } catch (err) {
+      console.error('Advisor chat failed', err)
+      set({ advisorBusy: false, advisorError: 'The advisor failed to respond. Try again.' })
+    }
+  },
 }))
 
-aiParser.onStatusChange((status) => {
+localAiEngine.onStatusChange((status) => {
   useGameStore.setState({ aiStatus: status })
 })
 

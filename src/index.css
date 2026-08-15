@@ -356,3 +356,113 @@ h3 {
     repeating-linear-gradient(45deg, rgba(122, 24, 24, 0.7) 0, rgba(122, 24, 24, 0.7) 1.5px, transparent 1.5px, transparent 5px),
     repeating-linear-gradient(-45deg, rgba(122, 24, 24, 0.7) 0, rgba(122, 24, 24, 0.7) 1.5px, transparent 1.5px, transparent 5px);
 }
+
+.advisor-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: flex-end;
+  z-index: 40;
+}
+.advisor-panel {
+  width: min(420px, 100%);
+  height: 100%;
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+}
+.advisor-header {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.advisor-readonly-tag {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+}
+.advisor-close {
+  margin-left: auto;
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  padding: 0.2rem 0.5rem;
+}
+.advisor-disabled {
+  padding: 1.2rem;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  align-items: flex-start;
+}
+.advisor-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.advisor-message {
+  max-width: 92%;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+.advisor-message.user {
+  align-self: flex-end;
+  background: var(--accent);
+  color: #1a1300;
+}
+.advisor-message.assistant {
+  align-self: flex-start;
+  background: var(--bg-panel-raised);
+  border: 1px solid var(--border);
+}
+.advisor-thinking {
+  color: var(--text-dim);
+  font-style: italic;
+}
+.advisor-summary-note {
+  align-self: center;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.advisor-error {
+  padding: 0.5rem 1rem;
+  color: var(--danger);
+  font-size: 0.82rem;
+}
+.advisor-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0 1rem 0.8rem;
+}
+.advisor-suggestions button {
+  font-size: 0.8rem;
+  padding: 0.35rem 0.6rem;
+}
+.advisor-input-row {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-top: 1px solid var(--border);
+}
+.advisor-input-row input {
+  flex: 1;
+}
