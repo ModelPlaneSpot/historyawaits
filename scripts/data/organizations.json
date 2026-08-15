@@ -1,0 +1,8 @@
+[
+  { "id": "ORG-HAMAS", "name": "Hamas", "hostEntityId": "PSE", "controlsRegionIds": ["PSE-GAZA"], "strength": 55 },
+  { "id": "ORG-HEZBOLLAH", "name": "Hezbollah", "hostEntityId": "LBN", "controlsRegionIds": [], "strength": 60 },
+  { "id": "ORG-ISIS", "name": "ISIS Remnants", "hostEntityId": "SYR", "controlsRegionIds": [], "strength": 25 },
+  { "id": "ORG-ALSHABAAB", "name": "Al-Shabaab", "hostEntityId": "SOM", "controlsRegionIds": [], "strength": 45 },
+  { "id": "ORG-TALIBAN-REMNANT", "name": "ISIS-K", "hostEntityId": "AFG", "controlsRegionIds": [], "strength": 20 },
+  { "id": "ORG-HOUTHIS", "name": "Houthi Movement", "hostEntityId": "YEM", "controlsRegionIds": [], "strength": 50 }
+]
