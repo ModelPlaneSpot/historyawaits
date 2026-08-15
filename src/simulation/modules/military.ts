@@ -28,6 +28,19 @@ export function applyMobilize(entity: WorldEntity, additionalTroops: number): vo
   entity.military.personnelReserve = Math.max(0, entity.military.personnelReserve - Math.round(additionalTroops))
 }
 
+export function applyDemobilize(entity: WorldEntity, troops: number): void {
+  const moved = Math.min(troops, entity.military.personnelActive)
+  entity.military.personnelActive -= moved
+  entity.military.personnelReserve += moved
+  entity.military.mobilizationLevel = clamp(entity.military.mobilizationLevel - moved / 100000 * 5, 0, 100)
+}
+
+/** "Increase/reduce readiness" -- moves mobilization level directly without
+ *  changing headcount (advanceMilitary will drift personnel toward it). */
+export function applySetReadiness(entity: WorldEntity, percent: number): void {
+  entity.military.mobilizationLevel = clamp(percent, 0, 100)
+}
+
 export function applyBuildUnits(entity: WorldEntity, unit: UnitType, quantity: number): boolean {
   const cost = UNIT_COST_USD[unit] * quantity
   if (unit === 'troops') {

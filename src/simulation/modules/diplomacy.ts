@@ -98,3 +98,23 @@ export function applySanction(state: WorldState, actorId: string, targetId: stri
 export function applyLiftSanction(state: WorldState, actorId: string, targetId: string): void {
   setRelationStatus(state, actorId, targetId, 'neutral')
 }
+
+export function applyRecognize(state: WorldState, actorId: string, targetId: string): void {
+  const target = state.entities[targetId]
+  if (target?.kind === 'disputed_entity') target.recognitionCount += 1
+  adjustOpinion(state, actorId, targetId, 25)
+}
+
+export function applyWithdrawRecognition(state: WorldState, actorId: string, targetId: string): void {
+  const target = state.entities[targetId]
+  if (target?.kind === 'disputed_entity') target.recognitionCount = Math.max(0, target.recognitionCount - 1)
+  adjustOpinion(state, actorId, targetId, -25)
+}
+
+export function applyImproveRelations(state: WorldState, actorId: string, targetId: string): void {
+  adjustOpinion(state, actorId, targetId, 20)
+  const rel = state.entities[actorId]?.relations.find((r) => r.otherEntityId === targetId)
+  if (!rel) return
+  if (rel.status === 'hostile' && rel.opinion > -20) setRelationStatus(state, actorId, targetId, 'neutral')
+  else if (rel.status === 'neutral' && rel.opinion > 40) setRelationStatus(state, actorId, targetId, 'friendly')
+}

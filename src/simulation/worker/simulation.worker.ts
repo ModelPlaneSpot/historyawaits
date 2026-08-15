@@ -2,7 +2,7 @@
 import type { WorldState } from '@/domain/schemas'
 import { createNewGame } from '../newGame'
 import { advanceTurn } from '../engine/turnEngine'
-import { validateAndApply } from '../validators/actionValidator'
+import { validateAndApplyPlan } from '../validators/actionValidator'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 let state: WorldState | null = null
@@ -23,8 +23,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       }
       case 'SUBMIT_ACTION': {
         if (!state) throw new Error('No active game')
-        const result = validateAndApply(state, msg.action, state.turn)
-        if (result.ok && result.state) state = result.state
+        const result = validateAndApplyPlan(state, msg.plan, state.turn)
+        state = result.state
         post({ type: 'ACTION_RESULT', ok: result.ok, message: result.message, state: result.ok ? state : null, requestId: msg.requestId })
         break
       }

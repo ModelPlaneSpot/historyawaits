@@ -31,6 +31,6 @@ function send(request: DistributiveOmit<WorkerRequest, 'requestId'>): Promise<Wo
 export const workerClient = {
   newGame: (playerEntityId: string) => send({ type: 'NEW_GAME', playerEntityId }),
   loadState: (state: import('@/domain/schemas').WorldState) => send({ type: 'LOAD_STATE', state }),
-  submitAction: (action: import('@/domain/schemas').StructuredAction) => send({ type: 'SUBMIT_ACTION', action }),
+  submitAction: (plan: import('@/domain/schemas').StructuredPlan) => send({ type: 'SUBMIT_ACTION', plan }),
   endTurn: () => send({ type: 'END_TURN' }),
 }

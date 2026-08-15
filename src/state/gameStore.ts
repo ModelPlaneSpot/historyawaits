@@ -125,19 +125,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   submitCommand: async (text: string) => {
-    const { worldState } = get()
+    const { worldState, selectedRegionId } = get()
     if (!worldState) return
     set((s) => ({ log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'player', text })] }))
 
-    const parsed = await interpretCommand(text, { worldState, playerEntityId: worldState.playerEntityId })
-    if (!parsed.ok || !parsed.action) {
+    const parsed = await interpretCommand(text, { worldState, playerEntityId: worldState.playerEntityId, selectedRegionId })
+    if (!parsed.ok || !parsed.plan) {
       set((s) => ({
         log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'error', text: parsed.error ?? 'Could not understand that command.', source: parsed.source })],
       }))
       return
     }
 
-    const res = await workerClient.submitAction(parsed.action)
+    const res = await workerClient.submitAction(parsed.plan)
     if (res.type === 'ACTION_RESULT') {
       set((s) => ({
         log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: res.ok ? 'result' : 'error', text: res.message, source: parsed.source })],

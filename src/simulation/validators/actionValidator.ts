@@ -1,22 +1,52 @@
 import { produce } from 'immer'
-import type { StructuredAction, WorldState } from '@/domain/schemas'
-import { applySetMilitarySpending } from '../modules/economy'
-import { applyBuildUnits, applyMobilize } from '../modules/military'
+import type { StructuredAction, StructuredPlan, WorldState } from '@/domain/schemas'
+import { applySetMilitarySpending, applySetTaxRate, applyResearchTech, applySendAid } from '../modules/economy'
+import { applyBuildUnits, applyMobilize, applyDemobilize, applySetReadiness } from '../modules/military'
 import {
   applyFormAlliance,
   applyBreakAlliance,
   applySignTreaty,
   applySanction,
   applyLiftSanction,
+  applyRecognize,
+  applyWithdrawRecognition,
+  applyImproveRelations,
 } from '../modules/diplomacy'
 import { applyDeclareWar, applyProposePeace } from '../modules/war'
-import { applyAnnex } from '../modules/territory'
-import { applyDissolveOrganization } from '../modules/government'
+import { applyAnnex, applyCedeTerritory, applyGrantIndependence } from '../modules/territory'
+import { applyDissolveOrganization, applyCallElection } from '../modules/government'
 
 export interface ValidationResult {
   ok: boolean
   state?: WorldState
   message: string
+}
+
+export interface PlanResult {
+  ok: boolean
+  state: WorldState
+  message: string
+  stepResults: ValidationResult[]
+}
+
+/**
+ * Runs every step of a plan in order against the SAME evolving state -- a
+ * later step sees the effects of earlier ones, and one step failing doesn't
+ * undo the ones that already succeeded (see spec: compound commands like
+ * "mobilize, then raise spending, then sign a treaty" should get as far as
+ * they validly can, not all-or-nothing).
+ */
+export function validateAndApplyPlan(state: WorldState, plan: StructuredPlan, turn: number): PlanResult {
+  let current = state
+  const stepResults: ValidationResult[] = []
+  for (const step of plan.steps) {
+    const result = validateAndApply(current, step, turn)
+    stepResults.push(result)
+    if (result.ok && result.state) current = result.state
+  }
+  const message = stepResults.map((r) => r.message).join(' ')
+  const ok = stepResults.some((r) => r.ok)
+  return { ok, state: current, message, stepResults }
 }
 
 /**
@@ -28,19 +58,7 @@ export interface ValidationResult {
 export function validateAndApply(state: WorldState, action: StructuredAction, turn: number): ValidationResult {
   const actor = state.entities[action.actor]
   if (!actor) return { ok: false, message: `Unknown actor: ${action.actor}` }
-
-  const result = dispatch(state, actor.id, action, turn)
-  if (!result.ok) return result
-
-  if (action.secondaryAction === 'dissolve_organization' && action.organization) {
-    const secondary = validateDissolve(result.state!, actor.id, action.organization, turn)
-    if (!secondary.ok) {
-      return { ok: true, state: result.state, message: `${result.message} (secondary action failed: ${secondary.message})` }
-    }
-    return { ok: true, state: secondary.state, message: `${result.message} ${secondary.message}` }
-  }
-
-  return result
+  return dispatch(state, actor.id, action, turn)
 }
 
 function dispatch(state: WorldState, actorId: string, action: StructuredAction, turn: number): ValidationResult {
@@ -51,8 +69,16 @@ function dispatch(state: WorldState, actorId: string, action: StructuredAction, 
       return validateProposePeace(state, actorId, action.target, turn)
     case 'mobilize':
       return validateMobilize(state, actorId, action.quantity)
+    case 'demobilize':
+      return validateDemobilize(state, actorId, action.quantity)
+    case 'set_readiness':
+      return validateSetReadiness(state, actorId, action.percent)
     case 'set_military_spending':
       return validateSetMilitarySpending(state, actorId, action.percent)
+    case 'set_tax_rate':
+      return validateSetTaxRate(state, actorId, action.percent)
+    case 'research_tech':
+      return validateResearchTech(state, actorId, action.quantity)
     case 'sign_treaty':
       return validateSignTreaty(state, actorId, action.target, action.treatyType, turn)
     case 'form_alliance':
@@ -63,14 +89,30 @@ function dispatch(state: WorldState, actorId: string, action: StructuredAction, 
       return validateBuildUnits(state, actorId, action.unit, action.quantity)
     case 'annex':
       return validateAnnex(state, actorId, action.target, turn)
+    case 'cede_territory':
+      return validateCedeTerritory(state, actorId, action.target, action.organization, turn)
+    case 'grant_independence':
+      return validateGrantIndependence(state, actorId, action.target, turn)
     case 'dissolve_organization':
       return validateDissolve(state, actorId, action.organization, turn)
+    case 'call_election':
+      return validateCallElection(state, actorId, turn)
     case 'sanction':
       return validateSanction(state, actorId, action.target)
     case 'lift_sanction':
       return validateLiftSanction(state, actorId, action.target)
+    case 'recognize':
+      return validateRecognize(state, actorId, action.target)
+    case 'withdraw_recognition':
+      return validateWithdrawRecognition(state, actorId, action.target)
+    case 'improve_relations':
+      return validateImproveRelations(state, actorId, action.target)
+    case 'send_aid':
+      return validateSendAid(state, actorId, action.target, action.quantity)
     case 'end_turn':
       return { ok: true, state, message: 'Turn ended.' }
+    case 'unsupported':
+      return { ok: false, message: action.note ?? "I understood what you're asking, but this simulation doesn't model that yet." }
     default:
       return { ok: false, message: "I couldn't understand what you wanted to do." }
   }
@@ -119,6 +161,22 @@ function validateMobilize(state: WorldState, actorId: string, quantity: number |
   return { ok: true, state: next, message: `Mobilized ${quantity.toLocaleString()} additional troops.` }
 }
 
+function validateDemobilize(state: WorldState, actorId: string, quantity: number | null): ValidationResult {
+  if (!quantity || quantity <= 0) return { ok: false, message: 'Demobilize how many troops?' }
+  const next = produce(state, (draft) => {
+    applyDemobilize(draft.entities[actorId], quantity)
+  })
+  return { ok: true, state: next, message: `Demobilized ${quantity.toLocaleString()} troops back to reserve.` }
+}
+
+function validateSetReadiness(state: WorldState, actorId: string, percent: number | null): ValidationResult {
+  if (percent === null || Number.isNaN(percent)) return { ok: false, message: 'Set readiness to what level?' }
+  const next = produce(state, (draft) => {
+    applySetReadiness(draft.entities[actorId], percent)
+  })
+  return { ok: true, state: next, message: `Military readiness set to ${Math.round(percent)}%.` }
+}
+
 function validateSetMilitarySpending(state: WorldState, actorId: string, percent: number | null): ValidationResult {
   if (percent === null || Number.isNaN(percent)) return { ok: false, message: 'Set military spending to what percentage?' }
   if (percent < 0 || percent > 60) return { ok: false, message: 'Military spending must be between 0% and 60% of GDP.' }
@@ -126,6 +184,25 @@ function validateSetMilitarySpending(state: WorldState, actorId: string, percent
     applySetMilitarySpending(draft.entities[actorId], percent)
   })
   return { ok: true, state: next, message: `Military spending set to ${percent}% of GDP.` }
+}
+
+function validateSetTaxRate(state: WorldState, actorId: string, percent: number | null): ValidationResult {
+  if (percent === null || Number.isNaN(percent)) return { ok: false, message: 'Set the tax rate to what percentage?' }
+  if (percent < 0 || percent > 80) return { ok: false, message: 'Tax rate must be between 0% and 80%.' }
+  const next = produce(state, (draft) => {
+    applySetTaxRate(draft.entities[actorId], percent)
+  })
+  return { ok: true, state: next, message: `Tax rate set to ${percent}%.` }
+}
+
+function validateResearchTech(state: WorldState, actorId: string, budgetUsd: number | null): ValidationResult {
+  const budget = budgetUsd && budgetUsd > 0 ? budgetUsd : state.entities[actorId].economy.gdpUsd * 0.01
+  let ok = false
+  const next = produce(state, (draft) => {
+    ok = applyResearchTech(draft.entities[actorId], budget)
+  })
+  if (!ok) return { ok: false, message: 'Insufficient treasury to fund a research program.' }
+  return { ok: true, state: next, message: `Research funded -- military technology is advancing.` }
 }
 
 function validateSignTreaty(
@@ -216,6 +293,32 @@ function validateAnnex(state: WorldState, actorId: string, targetId: string | nu
   return { ok: false, message: 'That is not a region, organization, or country I recognize.' }
 }
 
+function validateCedeTerritory(state: WorldState, actorId: string, targetId: string | null, toId: string | null, turn: number): ValidationResult {
+  if (!targetId || !state.regions[targetId]) return { ok: false, message: 'Cede which region? I could not identify it.' }
+  const recipientId = toId && state.entities[toId] ? toId : null
+  if (!recipientId) return { ok: false, message: 'Cede that region to whom?' }
+  const region = state.regions[targetId]
+  if (region.controllerId !== actorId) return { ok: false, message: 'You do not control that region.' }
+  let ok = false
+  const next = produce(state, (draft) => {
+    ok = applyCedeTerritory(draft, actorId, targetId, recipientId, turn)
+  })
+  if (!ok) return { ok: false, message: 'That territory transfer could not be completed.' }
+  return { ok: true, state: next, message: `${region.name} ceded to ${state.entities[recipientId].name}.` }
+}
+
+function validateGrantIndependence(state: WorldState, actorId: string, targetId: string | null, turn: number): ValidationResult {
+  if (!targetId || !state.regions[targetId]) return { ok: false, message: 'Grant independence to which region? I could not identify it.' }
+  const region = state.regions[targetId]
+  if (region.controllerId !== actorId) return { ok: false, message: 'You do not control that region.' }
+  let newId: string | null = null
+  const next = produce(state, (draft) => {
+    newId = applyGrantIndependence(draft, actorId, targetId, turn)
+  })
+  if (!newId) return { ok: false, message: 'Independence could not be granted for that region.' }
+  return { ok: true, state: next, message: `${region.name} is now independent as the Republic of ${region.name}.` }
+}
+
 function validateDissolve(state: WorldState, actorId: string, organizationId: string | null, turn: number): ValidationResult {
   if (!organizationId || !state.organizations[organizationId]) {
     return { ok: false, message: 'Dissolve which organization? I could not identify that group.' }
@@ -233,6 +336,15 @@ function validateDissolve(state: WorldState, actorId: string, organizationId: st
   return { ok: true, state: next, message: `${org.name} dissolved.` }
 }
 
+function validateCallElection(state: WorldState, actorId: string, turn: number): ValidationResult {
+  let ok = false
+  const next = produce(state, (draft) => {
+    ok = applyCallElection(draft, draft.entities[actorId], turn)
+  })
+  if (!ok) return { ok: false, message: 'Elections can only be called in a democracy.' }
+  return { ok: true, state: next, message: 'A snap election has been held.' }
+}
+
 function validateSanction(state: WorldState, actorId: string, targetId: string | null): ValidationResult {
   if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Sanction whom?' }
   const next = produce(state, (draft) => {
@@ -247,4 +359,41 @@ function validateLiftSanction(state: WorldState, actorId: string, targetId: stri
     applyLiftSanction(draft, actorId, targetId)
   })
   return { ok: true, state: next, message: `Sanctions lifted on ${state.entities[targetId].name}.` }
+}
+
+function validateRecognize(state: WorldState, actorId: string, targetId: string | null): ValidationResult {
+  if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Recognize whom?' }
+  const next = produce(state, (draft) => {
+    applyRecognize(draft, actorId, targetId)
+  })
+  return { ok: true, state: next, message: `${state.entities[targetId].name} formally recognized.` }
+}
+
+function validateWithdrawRecognition(state: WorldState, actorId: string, targetId: string | null): ValidationResult {
+  if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Withdraw recognition from whom?' }
+  const next = produce(state, (draft) => {
+    applyWithdrawRecognition(draft, actorId, targetId)
+  })
+  return { ok: true, state: next, message: `Recognition of ${state.entities[targetId].name} withdrawn.` }
+}
+
+function validateImproveRelations(state: WorldState, actorId: string, targetId: string | null): ValidationResult {
+  if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Improve relations with whom?' }
+  if (targetId === actorId) return { ok: false, message: 'You cannot improve relations with yourself.' }
+  if (isAtWar(state, actorId, targetId)) return { ok: false, message: 'You are at war with them -- propose peace first.' }
+  const next = produce(state, (draft) => {
+    applyImproveRelations(draft, actorId, targetId)
+  })
+  return { ok: true, state: next, message: `Diplomatic relations with ${state.entities[targetId].name} have improved.` }
+}
+
+function validateSendAid(state: WorldState, actorId: string, targetId: string | null, amount: number | null): ValidationResult {
+  if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Send aid to whom?' }
+  const amountUsd = amount && amount > 0 ? amount : state.entities[actorId].economy.gdpUsd * 0.001
+  let ok = false
+  const next = produce(state, (draft) => {
+    ok = applySendAid(draft.entities[actorId], draft.entities[targetId], amountUsd)
+  })
+  if (!ok) return { ok: false, message: 'Insufficient treasury to send that aid.' }
+  return { ok: true, state: next, message: `Aid sent to ${state.entities[targetId].name}.` }
 }

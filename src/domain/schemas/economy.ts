@@ -8,6 +8,7 @@ export const Economy = z.object({
   treasuryUsd: z.number(),
   debtToGdpPct: z.number().min(0),
   militarySpendingPctOfGdp: z.number().min(0).max(100),
+  taxRatePct: z.number().min(0).max(80),
   unemploymentRatePct: z.number().min(0).max(100),
   inflationPct: z.number(),
   tradeBalanceUsd: z.number(),

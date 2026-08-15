@@ -14,7 +14,7 @@ export interface OrchestratedResult extends ParseResult {
 export async function interpretCommand(input: string, ctx: ParseContext): Promise<OrchestratedResult> {
   if (aiParser.isAvailable()) {
     const aiResult = await aiParser.parse(input, ctx)
-    if (aiResult.ok && aiResult.confidence >= 0.5) {
+    if (aiResult.ok && aiResult.plan && aiResult.confidence >= 0.5) {
       return { ...aiResult, source: 'ai' }
     }
   }

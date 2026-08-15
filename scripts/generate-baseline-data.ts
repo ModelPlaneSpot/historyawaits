@@ -401,6 +401,7 @@ function buildEntity(identity: Identity): WorldEntity {
       treasuryUsd: Math.round(stats.gdpUsd * jitter(rng, 0.01, 0.05)),
       debtToGdpPct: Math.round(jitter(rng, 20, 110)),
       militarySpendingPctOfGdp: Math.round(stats.militarySpendingPctOfGdp * 10) / 10,
+      taxRatePct: Math.round(jitter(rng, 15, 40) * 10) / 10,
       unemploymentRatePct: Math.round(jitter(rng, 3, 16) * 10) / 10,
       inflationPct: Math.round(jitter(rng, 1, 9) * 10) / 10,
       tradeBalanceUsd: Math.round(stats.gdpUsd * jitter(rng, -0.05, 0.05)),

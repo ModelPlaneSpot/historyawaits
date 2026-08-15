@@ -30,6 +30,12 @@ export function advanceGovernment(state: WorldState, entity: WorldEntity, turn: 
   }
 }
 
+export function applyCallElection(state: WorldState, entity: WorldEntity, turn: number): boolean {
+  if (entity.government.type !== 'democracy') return false
+  resolveElection(state, entity, turn)
+  return true
+}
+
 function resolveElection(state: WorldState, entity: WorldEntity, turn: number): void {
   const gov = entity.government
   const winner = [...entity.parties].sort((a, b) => b.approval - a.approval)[0]
