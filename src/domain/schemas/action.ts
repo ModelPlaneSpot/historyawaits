@@ -79,8 +79,18 @@ export type StructuredPlan = z.infer<typeof StructuredPlan>
 export const ParseResult = z.object({
   ok: z.boolean(),
   plan: StructuredPlan.nullable(),
+  /** >=0.8 auto-executes, 0.5-0.8 asks the player to confirm the
+   *  interpretation first, <0.5 asks a clarifying question instead of
+   *  guessing (see command/types.ts ConfidenceTier). */
   confidence: z.number().min(0).max(1),
   raw: z.string(),
   error: z.string().nullable(),
+  /** Set when an entity/region reference was ambiguous (e.g. two countries
+   *  are both plausible fuzzy matches) -- the player should answer this
+   *  directly rather than the command being retried from scratch. */
+  clarificationQuestion: z.string().nullable(),
+  /** Plain-English restatement of `plan`, shown for medium-confidence
+   *  interpretations so the player can confirm before it executes. */
+  interpretedSummary: z.string().nullable(),
 })
 export type ParseResult = z.infer<typeof ParseResult>

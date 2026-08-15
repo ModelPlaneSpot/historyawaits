@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { zodToJsonSchema } from 'zod-to-json-schema'
 import { ActionType, TreatyKind, UnitType, StructuredAction, type ParseResult, type StructuredPlan } from '@/domain/schemas'
 import type { CommandParser, ParseContext } from './types'
-import { buildResolverIndex, resolveEntity, resolveOrganization, resolveRegionOrOrganizationOrEntity } from './entityResolver'
+import { buildResolverIndex, resolveEntity, resolveOrganization, resolveRegionOrOrganizationOrEntity, type ResolveResult } from './entityResolver'
 import { localAiEngine } from '@/ai/localAiEngine'
 
 /** What we ask the small local model to extract, one entry per intended
@@ -19,6 +19,7 @@ const AiStep = z.object({
   quantity: z.number().nullable(),
   unit: UnitType.nullable(),
   percent: z.number().nullable(),
+  negated: z.boolean().describe('True if the player said NOT to do this (e.g. "don\'t attack Iran", "stop mobilizing") -- the action must not be executed'),
   note: z.string().nullable().describe('For "unsupported": a short plain-English description of what the player actually asked for'),
 })
 type AiStep = z.infer<typeof AiStep>
@@ -32,19 +33,25 @@ const EXTRACTION_JSON_SCHEMA = JSON.stringify(zodToJsonSchema(AiExtraction, 'AiE
 
 const ACTION_LIST = ActionType.options.join(', ')
 
-const SYSTEM_PROMPT = `You are a command interpreter for a geopolitical strategy game. The player issues a natural-language command as the leader of one country, possibly a compound command with several instructions in one sentence. Convert it into a JSON object matching this schema:
+const SYSTEM_PROMPT = `You are a command interpreter for a geopolitical strategy game. The player issues a natural-language command as the leader of one country, possibly written conversationally, with typos, slang, or without using the "expected" keyword. Understand the MEANING and INTENT of the whole message, not just keywords. Convert it into a JSON object matching this schema:
 
 ${EXTRACTION_JSON_SCHEMA}
 
 Rules:
 - Produce one entry in "steps" per distinct instruction, in the order given. A simple command produces exactly one step.
 - action must be one of: ${ACTION_LIST}.
-- Recognize synonyms: "invade"/"attack"/"launch an offensive against"/"begin military operations against" all mean declare_war. "make peace"/"end the war"/"negotiate peace" mean propose_peace. "capture"/"seize" mean annex. "release"/"liberate" mean grant_independence.
-- targetName is the plain-text name of the country, region, or place being acted on (e.g. "Iran", "Gaza", "France"). If the player says "this region" or "here", set targetName to null and leave it to be resolved from the current map selection. Use null if there is no target.
+- Understand intent even without exact keywords. Examples: "I want our forces to cross the border and take control of northern Iran" -> declare_war (or annex if already at war) on Iran. "Put 100,000 soldiers near the Iranian border" -> mobilize, quantity 100000. "I want France to be our closest military partner" -> form_alliance with France. "Make the army much bigger" -> mobilize (pick a reasonable quantity, e.g. 10% of current active personnel, and say so in "note"). "Spend more on the armed forces" -> set_military_spending, a modest increase over the current value. "Gear up the army" -> set_readiness, increased.
+- Recognize synonyms: "invade"/"attack"/"launch an offensive against"/"begin military operations against"/"launch the invasion of" all mean declare_war. "make peace"/"end the war"/"stop fighting with"/"start peace talks with" mean propose_peace. "capture"/"seize" mean annex. "release"/"liberate" mean grant_independence. "withdraw from X"/"get our forces out of X"/"pull out of X" mean cede_territory (back to the original owner).
+- IMPORTANT -- preparation is not execution: "prepare for war with X" / "prepare an invasion of X" / "get ready for a possible war" means set_readiness (raise it), NOT declare_war. Only "attack X" / "invade X" / "launch the invasion of X" actually declares war.
+- Tolerate typos and misspellings (e.g. "atack" = attack, "moblize" = mobilize, "millitary" = military, "Isreal" = Israel, "Camboda" = Cambodia) -- correct them silently.
+- negated: set true when the player says NOT to do something ("don't attack Iran", "never invade", "avoid war with X", "stop mobilizing", "cancel the deployment"). Still fill in action/targetName as what was being negated, just mark negated true -- the game will acknowledge without executing it.
+- targetName is the plain-text name of the country, region, or place being acted on (e.g. "Iran", "Gaza", "France"). If the player says "this region"/"here", or a pronoun like "there"/"it"/"them"/"that country" referring to something from earlier in the conversation, set targetName to null and let it resolve from context. Use null if there is no target.
 - organizationName is the name of a non-state organization for dissolve_organization/recognize actions, OR the recipient country's name for cede_territory. Use null otherwise.
-- quantity/unit are used for mobilize, demobilize, and build_units (unit is one of troops, tanks, aircraft, ships, artillery).
-- percent is used for set_military_spending, set_readiness, and set_tax_rate. If the player says "by N percent" (a relative change) rather than "to N percent" (absolute), you do not know the current value -- still extract N into percent and rely on the game to interpret it.
-- If the command describes something this simulation cannot model (e.g. positioning troops on a specific border, building a discrete military base, hypothetical "what if" questions), set action to "unsupported" and put a short plain-English description of what was asked in "note".
+- quantity/unit are used for mobilize, demobilize, and build_units (unit is one of troops, tanks, aircraft, ships, artillery -- map IFV/APC to tanks, SAM to artillery).
+- percent is used for set_military_spending, set_readiness, and set_tax_rate. Distinguish "increase BY N percent" (add N to the current value) from "increase TO N percent" (set it to N) -- you don't know the current value, so just extract N into percent and note in "note" whether it was relative ("by") or absolute ("to") if there's any ambiguity. "double"/"triple"/"reduce by half" are relative multipliers, not literal percentages -- describe them in "note" instead of guessing a percent.
+- Do NOT execute questions. "Should we invade Iran?" / "What would happen if we attacked Iran?" / "Can we win this war?" are QUESTIONS, not commands -- if the entire message is a question, return a single step with action "unsupported" and a note that this is a question for the AI Advisor, not a command.
+- Broad, vague goals ("fix our economy", "we need to be less dependent on foreign oil") do not have one obvious action -- set action to "unsupported" and note the concrete levers that do exist (tax rate, military spending, research, sanctions) instead of picking one arbitrarily.
+- If the command describes something this simulation cannot model (e.g. positioning troops on a specific border, building a discrete military base), set action to "unsupported" and put a short plain-English description of what was asked in "note".
 - If you cannot understand an instruction at all, set its action to "unknown".
 - Output ONLY the JSON object, nothing else.`
 
@@ -58,7 +65,7 @@ class AiParser implements CommandParser {
   async parse(input: string, ctx: ParseContext): Promise<ParseResult> {
     const engine = localAiEngine.getEngine()
     if (!engine) {
-      return { ok: false, plan: null, confidence: 0, raw: input, error: 'Local AI model is not loaded.' }
+      return { ok: false, plan: null, confidence: 0, raw: input, error: 'Local AI model is not loaded.', clarificationQuestion: null, interpretedSummary: null }
     }
     try {
       const completion = await engine.chat.completions.create({
@@ -68,15 +75,28 @@ class AiParser implements CommandParser {
         ],
         response_format: { type: 'json_object', schema: EXTRACTION_JSON_SCHEMA },
         temperature: 0,
-        max_tokens: 600,
+        max_tokens: 700,
       })
       const raw = completion.choices[0]?.message?.content ?? ''
       return groundExtraction(raw, input, ctx)
     } catch (err) {
       console.error('AI parse failed', err)
-      return { ok: false, plan: null, confidence: 0, raw: input, error: 'The local AI model failed to interpret that command.' }
+      return { ok: false, plan: null, confidence: 0, raw: input, error: 'The local AI model failed to interpret that command.', clarificationQuestion: null, interpretedSummary: null }
     }
   }
+}
+
+function resolveTarget(step: AiStep, ctx: ParseContext, index: ReturnType<typeof buildResolverIndex>): ResolveResult | null {
+  if (step.targetName === null) {
+    if (ctx.selectedRegionId && (step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence')) {
+      return { id: ctx.selectedRegionId, kind: 'region', confidence: 1, ambiguous: false, alternatives: [] }
+    }
+    if (ctx.lastEntityId) return { id: ctx.lastEntityId, kind: 'entity', confidence: 0.7, ambiguous: false, alternatives: [] }
+    if (ctx.lastRegionId) return { id: ctx.lastRegionId, kind: 'region', confidence: 0.7, ambiguous: false, alternatives: [] }
+    return null
+  }
+  const isTerritorial = step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence'
+  return isTerritorial ? resolveRegionOrOrganizationOrEntity(step.targetName, index) : resolveEntity(step.targetName, index)
 }
 
 function groundExtraction(rawJson: string, originalInput: string, ctx: ParseContext): ParseResult {
@@ -84,21 +104,23 @@ function groundExtraction(rawJson: string, originalInput: string, ctx: ParseCont
   try {
     parsedJson = JSON.parse(rawJson)
   } catch {
-    return { ok: false, plan: null, confidence: 0, raw: originalInput, error: 'The model did not return valid JSON.' }
+    return { ok: false, plan: null, confidence: 0, raw: originalInput, error: 'The model did not return valid JSON.', clarificationQuestion: null, interpretedSummary: null }
   }
   const extraction = AiExtraction.safeParse(parsedJson)
   if (!extraction.success) {
-    return { ok: false, plan: null, confidence: 0, raw: originalInput, error: 'The model returned an unexpected shape.' }
+    return { ok: false, plan: null, confidence: 0, raw: originalInput, error: 'The model returned an unexpected shape.', clarificationQuestion: null, interpretedSummary: null }
   }
   const data = extraction.data
   if (data.steps.length === 0) {
-    return { ok: false, plan: null, confidence: 0.2, raw: originalInput, error: 'The AI could not understand that command.' }
+    return { ok: false, plan: null, confidence: 0.2, raw: originalInput, error: 'The AI could not understand that command.', clarificationQuestion: null, interpretedSummary: null }
   }
 
   const index = buildResolverIndex(ctx.worldState)
   const steps: StructuredAction[] = []
   let ungroundedCount = 0
   let unknownCount = 0
+  let fuzzyCount = 0
+  let clarificationQuestion: string | null = null
 
   for (const step of data.steps) {
     if (step.action === 'unknown') {
@@ -106,21 +128,47 @@ function groundExtraction(rawJson: string, originalInput: string, ctx: ParseCont
       continue
     }
 
+    if (step.negated) {
+      steps.push(
+        StructuredAction.parse({
+          actor: ctx.playerEntityId,
+          action: 'unsupported',
+          target: null,
+          organization: null,
+          treatyType: null,
+          quantity: null,
+          unit: null,
+          percent: null,
+          note: `Understood -- not going to ${step.action.replace(/_/g, ' ')}${step.targetName ? ` (${step.targetName})` : ''}.`,
+        }),
+      )
+      continue
+    }
+
     let target: string | null = null
-    if (step.targetName === null && ctx.selectedRegionId && (step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence')) {
-      target = ctx.selectedRegionId
-    } else if (step.targetName) {
-      target =
-        step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence'
-          ? (resolveRegionOrOrganizationOrEntity(step.targetName, index)?.id ?? null)
-          : resolveEntity(step.targetName, index)
-      if (target === null) ungroundedCount += 1
+    if (step.targetName !== null || step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence' || step.action === 'declare_war' || step.action === 'sanction') {
+      const resolved = resolveTarget(step, ctx, index)
+      if (resolved?.ambiguous) {
+        clarificationQuestion = `I found more than one possible match -- did you mean ${resolved.alternatives.map((n) => `"${n}"`).join(' or ')}?`
+      } else if (resolved?.id) {
+        target = resolved.id
+        if (resolved.confidence < 1) fuzzyCount += 1
+      } else if (step.targetName) {
+        ungroundedCount += 1
+      }
     }
 
     let organization: string | null = null
     if (step.organizationName) {
-      organization = step.action === 'cede_territory' ? resolveEntity(step.organizationName, index) : resolveOrganization(step.organizationName, index)
-      if (organization === null) ungroundedCount += 1
+      const resolved = step.action === 'cede_territory' ? resolveEntity(step.organizationName, index) : resolveOrganization(step.organizationName, index)
+      if (resolved.ambiguous) {
+        clarificationQuestion = `I found more than one possible match -- did you mean ${resolved.alternatives.map((n) => `"${n}"`).join(' or ')}?`
+      } else if (resolved.id) {
+        organization = resolved.id
+        if (resolved.confidence < 1) fuzzyCount += 1
+      } else {
+        ungroundedCount += 1
+      }
     }
 
     steps.push(
@@ -138,18 +186,25 @@ function groundExtraction(rawJson: string, originalInput: string, ctx: ParseCont
     )
   }
 
+  if (clarificationQuestion) {
+    return { ok: false, plan: null, confidence: 0.3, raw: originalInput, error: clarificationQuestion, clarificationQuestion, interpretedSummary: null }
+  }
+
   if (steps.length === 0) {
-    return { ok: false, plan: null, confidence: 0.2, raw: originalInput, error: 'The AI could not understand that command.' }
+    return { ok: false, plan: null, confidence: 0.2, raw: originalInput, error: 'The AI could not understand that command.', clarificationQuestion: null, interpretedSummary: null }
   }
 
   const plan: StructuredPlan = { steps }
   const grounded = ungroundedCount === 0
+  const confidence = !grounded ? 0.4 : unknownCount > 0 ? 0.6 : fuzzyCount > 0 ? 0.65 : 0.85
   return {
     ok: true,
     plan,
-    confidence: grounded ? (unknownCount > 0 ? 0.6 : 0.75) : 0.4,
+    confidence,
     raw: originalInput,
     error: grounded ? null : 'Could not identify one or more names in that command -- part of the action may target the wrong thing.',
+    clarificationQuestion: null,
+    interpretedSummary: null,
   }
 }
 

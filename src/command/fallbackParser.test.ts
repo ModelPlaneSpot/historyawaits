@@ -5,8 +5,14 @@ import { createNewGame } from '@/simulation/newGame'
 import { validateAndApply, validateAndApplyPlan } from '@/simulation/validators/actionValidator'
 import type { ParseContext } from './types'
 
-function ctx(worldState: ReturnType<typeof createNewGame>, playerEntityId: string, selectedRegionId: string | null = null): ParseContext {
-  return { worldState, playerEntityId, selectedRegionId }
+function ctx(
+  worldState: ReturnType<typeof createNewGame>,
+  playerEntityId: string,
+  selectedRegionId: string | null = null,
+  lastEntityId: string | null = null,
+  lastRegionId: string | null = null,
+): ParseContext {
+  return { worldState, playerEntityId, selectedRegionId, lastEntityId, lastRegionId }
 }
 
 describe('fallbackParser', () => {

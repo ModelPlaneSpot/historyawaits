@@ -20,7 +20,7 @@ const commands = [
   'sanction Russia',
 ]
 for (const cmd of commands) {
-  await page.fill('input[placeholder*="declare war"]', cmd)
+  await page.fill('input[placeholder*="Talk to your government"]', cmd)
   await page.click('button:has-text("Send")')
   await page.waitForTimeout(400)
   const log = await page.textContent('.command-log')

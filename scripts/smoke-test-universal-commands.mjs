@@ -8,7 +8,7 @@ page.on('console', (msg) => { if (msg.type() === 'error') errors.push(msg.text()
 page.on('pageerror', (err) => errors.push('pageerror: ' + err.message))
 
 async function run(cmd) {
-  await page.fill('input[placeholder*="declare war"]', cmd)
+  await page.fill('input[placeholder*="Talk to your government"]', cmd)
   await page.click('button:has-text("Send")')
   await page.waitForTimeout(400)
   const log = await page.textContent('.command-log')

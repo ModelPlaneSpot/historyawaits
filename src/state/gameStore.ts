@@ -1,7 +1,8 @@
 import { create } from 'zustand'
-import type { WorldState } from '@/domain/schemas'
+import type { StructuredAction, StructuredPlan, WorldState } from '@/domain/schemas'
 import { workerClient } from './workerClient'
 import { interpretCommand } from '@/command/commandOrchestrator'
+import { confidenceTier } from '@/command/types'
 import { localAiEngine, type AiEngineStatus } from '@/ai/localAiEngine'
 import { sendAdvisorMessage, emptyAdvisorState, type AdvisorState } from '@/ai/advisorChat'
 import { buildTurnSummary, type TurnSummary } from './turnSummary'
@@ -28,6 +29,27 @@ export interface LogEntry {
   source?: 'ai' | 'fallback'
 }
 
+export interface PendingCommand {
+  raw: string
+  plan: StructuredPlan
+  source: 'ai' | 'fallback'
+  summary: string
+}
+
+/** Figures out which of a resolved step's ids are a region vs. a country, so
+ *  a later "there"/"them" pronoun in the next command resolves against the
+ *  right kind of thing. */
+function lastTargetsFrom(action: StructuredAction, worldState: WorldState): { entityId: string | null; regionId: string | null } {
+  let entityId: string | null = null
+  let regionId: string | null = null
+  if (action.target) {
+    if (worldState.regions[action.target]) regionId = action.target
+    else if (worldState.entities[action.target]) entityId = action.target
+  }
+  if (action.organization && worldState.entities[action.organization]) entityId = action.organization
+  return { entityId, regionId }
+}
+
 interface GameStore {
   screen: 'menu' | 'playing'
   worldState: WorldState | null
@@ -51,10 +73,19 @@ interface GameStore {
   newsOpen: boolean
   storyDetailId: string | null
 
+  /** What the player's last resolved command was about, for pronoun
+   *  resolution ("send another 20,000 there" / "attack them"). */
+  lastEntityId: string | null
+  lastRegionId: string | null
+  pendingCommand: PendingCommand | null
+
   startNewGame: (playerEntityId: string) => Promise<void>
   continueFromSave: (id: string) => Promise<void>
   refreshSaves: () => Promise<void>
   submitCommand: (text: string) => Promise<void>
+  executePlan: (plan: StructuredPlan, source: 'ai' | 'fallback') => Promise<void>
+  confirmPendingCommand: () => Promise<void>
+  cancelPendingCommand: () => void
   endTurn: () => Promise<void>
   selectEntity: (id: string | null) => void
   selectRegion: (id: string | null) => void
@@ -102,6 +133,10 @@ export const useGameStore = create<GameStore>((set, get) => ({
   cameraAutoFollow: true,
   newsOpen: false,
   storyDetailId: null,
+
+  lastEntityId: null,
+  lastRegionId: null,
+  pendingCommand: null,
 
   startNewGame: async (playerEntityId: string) => {
     set({ busy: true })
@@ -155,25 +190,60 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   submitCommand: async (text: string) => {
-    const { worldState, selectedRegionId } = get()
+    const { worldState, selectedRegionId, lastEntityId, lastRegionId } = get()
     if (!worldState) return
-    set((s) => ({ log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'player', text })] }))
+    set((s) => ({ log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'player', text })], pendingCommand: null }))
 
-    const parsed = await interpretCommand(text, { worldState, playerEntityId: worldState.playerEntityId, selectedRegionId })
+    const parsed = await interpretCommand(text, { worldState, playerEntityId: worldState.playerEntityId, selectedRegionId, lastEntityId, lastRegionId })
     if (!parsed.ok || !parsed.plan) {
       set((s) => ({
-        log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'error', text: parsed.error ?? 'Could not understand that command.', source: parsed.source })],
+        log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'error', text: parsed.clarificationQuestion ?? parsed.error ?? 'Could not understand that command.', source: parsed.source })],
       }))
       return
     }
 
-    const res = await workerClient.submitAction(parsed.plan)
-    if (res.type === 'ACTION_RESULT') {
+    const tier = confidenceTier(parsed.confidence)
+    if (tier === 'medium') {
+      const summary = parsed.interpretedSummary ?? 'the command above'
       set((s) => ({
-        log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: res.ok ? 'result' : 'error', text: res.message, source: parsed.source })],
+        log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'system', text: `Interpreted as: ${summary}. Confirm or cancel below.`, source: parsed.source })],
+        pendingCommand: { raw: text, plan: parsed.plan!, source: parsed.source, summary },
+      }))
+      return
+    }
+
+    await get().executePlan(parsed.plan, parsed.source)
+  },
+
+  executePlan: async (plan: StructuredPlan, source: 'ai' | 'fallback') => {
+    const { worldState } = get()
+    if (!worldState) return
+    const res = await workerClient.submitAction(plan)
+    if (res.type === 'ACTION_RESULT') {
+      const lastStep = plan.steps[plan.steps.length - 1]
+      const { entityId, regionId } = lastStep ? lastTargetsFrom(lastStep, worldState) : { entityId: null, regionId: null }
+      set((s) => ({
+        log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: res.ok ? 'result' : 'error', text: res.message, source })],
         worldState: res.state ?? s.worldState,
+        lastEntityId: entityId ?? s.lastEntityId,
+        lastRegionId: regionId ?? s.lastRegionId,
+        pendingCommand: null,
       }))
     }
+  },
+
+  confirmPendingCommand: async () => {
+    const pending = get().pendingCommand
+    if (!pending) return
+    await get().executePlan(pending.plan, pending.source)
+  },
+
+  cancelPendingCommand: () => {
+    const worldState = get().worldState
+    set((s) => ({
+      pendingCommand: null,
+      log: [...s.log, makeLogEntry({ turn: worldState?.turn ?? 0, kind: 'system', text: 'Cancelled.' })],
+    }))
   },
 
   endTurn: async () => {

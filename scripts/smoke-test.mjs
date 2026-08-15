@@ -70,13 +70,13 @@ await clickUntil(
 await shot('select-region')
 
 // Fallback-parser command flow.
-await page.fill('input[placeholder*="declare war"]', 'declare war on Iran')
+await page.fill('input[placeholder*="Talk to your government"]', 'declare war on Iran')
 await page.click('button:has-text("Send")')
 await page.waitForTimeout(500)
 let logText = await page.textContent('.command-log')
 console.log(`[${logText.includes('War declared') ? 'ok' : 'FAIL'}] "declare war on Iran" -> ${logText.split('\n').pop()}`)
 
-await page.fill('input[placeholder*="declare war"]', 'build 100 tanks')
+await page.fill('input[placeholder*="Talk to your government"]', 'build 100 tanks')
 await page.click('button:has-text("Send")')
 await page.waitForTimeout(500)
 logText = await page.textContent('.command-log')

@@ -5,6 +5,9 @@ export function CommandConsole() {
   const [input, setInput] = useState('')
   const log = useGameStore((s) => s.log)
   const submitCommand = useGameStore((s) => s.submitCommand)
+  const pendingCommand = useGameStore((s) => s.pendingCommand)
+  const confirmPendingCommand = useGameStore((s) => s.confirmPendingCommand)
+  const cancelPendingCommand = useGameStore((s) => s.cancelPendingCommand)
   const logRef = useRef<HTMLDivElement>(null)
 
   async function handleSubmit(e: React.FormEvent) {
@@ -13,6 +16,13 @@ export function CommandConsole() {
     if (!text) return
     setInput('')
     await submitCommand(text)
+    requestAnimationFrame(() => {
+      logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
+    })
+  }
+
+  async function handleConfirm() {
+    await confirmPendingCommand()
     requestAnimationFrame(() => {
       logRef.current?.scrollTo({ top: logRef.current.scrollHeight })
     })
@@ -29,11 +39,24 @@ export function CommandConsole() {
           </div>
         ))}
       </div>
+      {pendingCommand && (
+        <div className="pending-command-row">
+          <span>
+            Interpreted as: <strong>{pendingCommand.summary}</strong>
+          </span>
+          <div className="pending-command-actions">
+            <button className="primary" onClick={handleConfirm}>
+              Confirm
+            </button>
+            <button onClick={cancelPendingCommand}>Cancel</button>
+          </div>
+        </div>
+      )}
       <form className="command-input-row" onSubmit={handleSubmit}>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder='Try: "declare war on Iran", "annex Gaza and dissolve Hamas", "build 100 tanks"'
+          placeholder='Talk to your government naturally, e.g. "atack iran and moblize 50k troops"'
         />
         <button type="submit" className="primary">
           Send

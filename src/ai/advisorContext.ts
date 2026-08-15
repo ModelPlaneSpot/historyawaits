@@ -147,14 +147,14 @@ export function buildAdvisorContext(state: WorldState, questionText: string): st
   // own data (still framed as an estimate) so comparisons work.
   const index = buildResolverIndex(state)
   const mentioned = resolveEntity(questionText, index)
-  if (mentioned && mentioned !== player.id) {
-    const other = state.entities[mentioned]
+  if (mentioned.id && mentioned.id !== player.id) {
+    const other = state.entities[mentioned.id]
     if (other) {
       lines.push('')
       lines.push(`=== ${other.name} (est. -- mentioned in your question) ===`)
       lines.push(summarizeForeignMilitary(other))
       lines.push(foreignEconomySummary(other))
-      const relation = player.relations.find((r) => r.otherEntityId === mentioned)
+      const relation = player.relations.find((r) => r.otherEntityId === mentioned.id)
       lines.push(`Our relationship: ${relation?.status ?? 'neutral'} (opinion ${relation?.opinion.toFixed(0) ?? 0}/100)`)
     }
   }
