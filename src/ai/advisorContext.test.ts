@@ -7,16 +7,22 @@ import { applyDeclareWar } from '@/simulation/modules/war'
 describe('buildAdvisorContext', () => {
   it('includes the player nation and real economic figures', () => {
     const state = createNewGame('USA')
-    const context = buildAdvisorContext(state)
+    const context = buildAdvisorContext(state, 'how is my economy?')
     expect(context).toContain('United States')
     expect(context).toContain('GDP')
     expect(context).toMatch(/\$27\.00T|\$26|\$27|\$28/) // real seeded USA GDP, not a placeholder
   })
 
-  it('reports "not currently at war" when there are no active wars', () => {
+  it('includes the current in-game date', () => {
     const state = createNewGame('USA')
-    const context = buildAdvisorContext(state)
-    expect(context).toContain('Not currently at war')
+    const context = buildAdvisorContext(state, 'what is the date?')
+    expect(context).toContain('Current in-game date:')
+  })
+
+  it('reports not being at war when there are no active wars', () => {
+    const state = createNewGame('USA')
+    const context = buildAdvisorContext(state, 'how strong is my military?')
+    expect(context).toContain('At war: no')
   })
 
   it('reports active wars with the opponent name once one starts', () => {
@@ -24,15 +30,28 @@ describe('buildAdvisorContext', () => {
     state = produce(state, (draft) => {
       applyDeclareWar(draft, 'USA', 'IRN', 1)
     })
-    const context = buildAdvisorContext(state)
+    const context = buildAdvisorContext(state, 'how is the war going?')
     expect(context).toContain('Iran')
-    expect(context).not.toContain('Not currently at war')
+    expect(context).not.toContain('At war: no')
   })
 
   it('never claims exact knowledge of a foreign military (uses "est." framing)', () => {
     const state = createNewGame('USA')
-    const context = buildAdvisorContext(state)
-    const threatsSection = context.split('Largest military powers')[1]
-    expect(threatsSection).toContain('est.')
+    const context = buildAdvisorContext(state, 'which country is the biggest threat to me?')
+    expect(context).toContain('est.')
+  })
+
+  it('only includes detailed military section when the question is about military', () => {
+    const state = createNewGame('USA')
+    const militaryContext = buildAdvisorContext(state, 'how strong is my military?')
+    const economyContext = buildAdvisorContext(state, 'why is my economy declining?')
+    expect(militaryContext).toContain('Reserve:')
+    expect(economyContext).not.toContain('Reserve:')
+  })
+
+  it('includes a named country\'s data when the question mentions it', () => {
+    const state = createNewGame('USA')
+    const context = buildAdvisorContext(state, 'should I invade Iran?')
+    expect(context).toContain('=== Iran')
   })
 })

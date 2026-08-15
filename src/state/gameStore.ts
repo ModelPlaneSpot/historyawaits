@@ -179,15 +179,19 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false }),
 
-  toggleAdvisor: () => set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null })),
+  toggleAdvisor: () => {
+    set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null }))
+    // Opening the advisor is the player's clear signal they want AI features --
+    // start the (one-time, cached) model download automatically so they don't
+    // have to find and click a separate "enable" button first.
+    if (get().advisorOpen && localAiEngine.getStatus() === 'unloaded' && localAiEngine.supportsWebGpu()) {
+      void localAiEngine.initialize()
+    }
+  },
 
   askAdvisor: async (text: string) => {
     const { worldState, advisorState, currentSaveId } = get()
     if (!worldState) return
-    if (!localAiEngine.isReady()) {
-      set({ advisorError: 'The local AI model needs to be enabled first (see the Local AI status in the top bar).' })
-      return
-    }
     set({ advisorBusy: true, advisorError: null })
     try {
       const { state: newState } = await sendAdvisorMessage(worldState, advisorState, text)

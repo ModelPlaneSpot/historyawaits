@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react'
 import { useGameStore } from '@/state/gameStore'
 import { MapView } from './map/MapView'
 import { EntityPanel } from './panels/EntityPanel'
@@ -6,6 +7,7 @@ import { NewsPanel } from './panels/NewsPanel'
 import { CommandConsole } from './CommandConsole'
 import { AiStatusBadge } from './AiStatusBadge'
 import { AdvisorPanel } from './AdvisorPanel'
+import { formatGameDate } from '@/simulation/gameDate'
 
 export function GameScreen() {
   const worldState = useGameStore((s) => s.worldState)
@@ -18,6 +20,11 @@ export function GameScreen() {
   const returnToMenu = useGameStore((s) => s.returnToMenu)
   const busy = useGameStore((s) => s.busy)
   const toggleAdvisor = useGameStore((s) => s.toggleAdvisor)
+  const sidePanelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (selectedRegionId) sidePanelRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [selectedRegionId])
 
   if (!worldState) return null
 
@@ -31,7 +38,9 @@ export function GameScreen() {
         <span className="color-swatch" style={{ background: player.mapColor }} />
         <span className={`fi fi-${player.flagCode}`} />
         <strong>{player.name}</strong>
-        <span className="turn-label">Turn {worldState.turn}</span>
+        <span className="turn-label">
+          Turn {worldState.turn} &middot; {formatGameDate(worldState.turn)}
+        </span>
         <div className="spacer" />
         <AiStatusBadge />
         <button onClick={toggleAdvisor}>AI Advisor</button>
@@ -49,9 +58,9 @@ export function GameScreen() {
           onSelectEntity={selectEntity}
           onSelectRegion={selectRegion}
         />
-        <div className="side-panel">
-          {selectedEntity && <EntityPanel entity={selectedEntity} />}
+        <div className="side-panel" ref={sidePanelRef}>
           {selectedRegion && <RegionPanel region={selectedRegion} worldState={worldState} />}
+          {selectedEntity && <EntityPanel entity={selectedEntity} />}
           <NewsPanel news={worldState.news} worldState={worldState} />
         </div>
       </div>

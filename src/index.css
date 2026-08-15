@@ -405,6 +405,38 @@ h3 {
   gap: 0.8rem;
   align-items: flex-start;
 }
+.advisor-source-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border);
+}
+.advisor-source-row .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.advisor-source-row.local-ai .dot {
+  background: var(--success);
+}
+.advisor-source-row.cloud-ai .dot {
+  background: var(--ally);
+}
+.advisor-source-row.fallback .dot {
+  background: var(--accent);
+}
+.advisor-loading-note {
+  color: var(--text-dim);
+}
+.advisor-retry {
+  margin-left: auto;
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+}
 .advisor-log {
   flex: 1;
   overflow-y: auto;
@@ -465,4 +497,53 @@ h3 {
 }
 .advisor-input-row input {
   flex: 1;
+}
+
+.region-panel {
+  border-bottom: 3px solid var(--accent);
+  background: var(--bg-panel-raised);
+}
+.region-panel-header {
+  padding-bottom: 0.4rem;
+}
+.region-eyebrow {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--accent);
+  margin-bottom: 0.3rem;
+}
+.region-name {
+  font-size: 1.5rem;
+  line-height: 1.15;
+  margin: 0 0 0.3rem;
+  display: inline-block;
+}
+.region-panel-header .color-swatch {
+  vertical-align: middle;
+  margin-right: 0.4rem;
+}
+.region-subtitle {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.region-tag {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  border-radius: 20px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+}
+.region-note {
+  font-size: 0.76rem;
+  color: var(--text-dim);
+  margin-top: 0.6rem;
+  line-height: 1.4;
 }
