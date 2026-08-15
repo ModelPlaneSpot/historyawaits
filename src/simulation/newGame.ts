@@ -31,7 +31,10 @@ export function createNewGame(playerEntityId: string): WorldState {
         headline: `A new game begins as ${entities[playerEntityId].name}`,
         body: 'The world awaits your first move.',
         entityIds: [playerEntityId],
-        severity: 'info',
+        category: 'breaking',
+        importance: 'minor',
+        locationEntityId: playerEntityId,
+        locationRegionId: null,
       },
     ],
   }

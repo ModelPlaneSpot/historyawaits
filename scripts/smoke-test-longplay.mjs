@@ -17,6 +17,8 @@ const start = Date.now()
 for (let i = 1; i <= TURNS; i++) {
   await page.click('button:has-text("End Turn")')
   await page.waitForSelector(`text=Turn ${i}`, { timeout: 20000 })
+  const continueBtn = page.locator('button:has-text("Continue")')
+  if (await continueBtn.count() > 0) await continueBtn.click()
 }
 console.log(`[ok] Played ${TURNS} turns in ${Date.now() - start}ms with no crash`)
 

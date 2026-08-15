@@ -45,7 +45,10 @@ function resolveElection(state: WorldState, entity: WorldEntity, turn: number): 
   gov.electionDueTurn = turn + 208 // ~4 years, in weekly turns
   if (changed) {
     gov.stability = clamp(gov.stability + 10, 0, 100)
-    pushNews(state, turn, `${winner.name} wins election in ${entity.name}`, `${winner.name} has won the general election in ${entity.name}, forming a new government.`, [entity.id], 'notable')
+    pushNews(state, turn, `${winner.name} wins election in ${entity.name}`, `${winner.name} has won the general election in ${entity.name}, forming a new government.`, [entity.id], {
+      category: 'politics',
+      importance: 'medium',
+    })
   }
 }
 
@@ -54,7 +57,10 @@ function triggerCoup(state: WorldState, entity: WorldEntity, turn: number): void
   entity.government.stability = 40
   entity.government.coupRisk = 5
   entity.government.electionDueTurn = null
-  pushNews(state, turn, `Coup in ${entity.name}`, `The military has seized power in ${entity.name}.`, [entity.id], 'major')
+  pushNews(state, turn, `Coup in ${entity.name}`, `The military has seized power in ${entity.name}.`, [entity.id], {
+    category: 'politics',
+    importance: 'critical',
+  })
 }
 
 export function applyDissolveOrganization(state: WorldState, organizationId: string, turn: number): boolean {
@@ -65,7 +71,10 @@ export function applyDissolveOrganization(state: WorldState, organizationId: str
   for (const region of Object.values(state.regions)) {
     if (region.occupyingOrganizationId === organizationId) region.occupyingOrganizationId = null
   }
-  pushNews(state, turn, `${org.name} dissolved`, `${org.name} has been dissolved.`, [org.hostEntityId], 'major')
+  pushNews(state, turn, `${org.name} dissolved`, `${org.name} has been dissolved.`, [org.hostEntityId], {
+    category: 'military',
+    importance: 'major',
+  })
   return true
 }
 

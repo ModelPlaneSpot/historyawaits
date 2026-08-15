@@ -89,6 +89,13 @@ await page.waitForSelector('text=Turn 1', { timeout: 20000 })
 console.log('[ok] End Turn advanced to Turn 1')
 await shot('turn-1')
 
+// The turn summary modal blocks the rest of the UI until acknowledged.
+const continueBtn = page.locator('button:has-text("Continue")')
+if (await continueBtn.count() > 0) {
+  await continueBtn.click()
+  console.log('[ok] Turn summary modal shown and dismissed')
+}
+
 await page.click('button:has-text("Menu")')
 await page.waitForSelector('text=HISTORY AWAITS', { timeout: 20000 })
 await page.waitForSelector('text=Autosave', { timeout: 20000 })

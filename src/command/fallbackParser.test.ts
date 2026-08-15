@@ -158,6 +158,8 @@ describe('actionValidator end-to-end via fallback parser', () => {
         contestedRegionIds: [],
         warScore: 0,
         active: true,
+        level: 4,
+        isCivilWar: false,
       }
     })
     const canadaRegion = state.entities.CAN.territoryRegionIds[0]

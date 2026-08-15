@@ -11,10 +11,17 @@ await page.goto(baseUrl, { waitUntil: 'networkidle' })
 await page.waitForSelector('text=HISTORY AWAITS', { timeout: 20000 })
 await page.click('text=United States')
 await page.waitForSelector('text=Turn 0', { timeout: 20000 })
+async function dismissTurnSummary() {
+  const continueBtn = page.locator('button:has-text("Continue")')
+  if (await continueBtn.count() > 0) await continueBtn.click()
+}
+
 await page.click('button:has-text("End Turn")')
 await page.waitForSelector('text=Turn 1', { timeout: 20000 })
+await dismissTurnSummary()
 await page.click('button:has-text("End Turn")')
 await page.waitForSelector('text=Turn 2', { timeout: 20000 })
+await dismissTurnSummary()
 console.log('[ok] Reached turn 2 before refresh')
 
 await page.reload({ waitUntil: 'networkidle' })

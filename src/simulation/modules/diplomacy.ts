@@ -1,6 +1,6 @@
 import type { WorldState, WorldEntity, RelationStatus, TreatyKind } from '@/domain/schemas'
 
-function getOrCreateRelation(entity: WorldEntity, otherId: string) {
+export function getOrCreateRelation(entity: WorldEntity, otherId: string) {
   let rel = entity.relations.find((r) => r.otherEntityId === otherId)
   if (!rel) {
     rel = { otherEntityId: otherId, opinion: 0, status: 'neutral' as RelationStatus, treatyIds: [] }

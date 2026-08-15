@@ -5,6 +5,7 @@ import { applyDeclareWar, advanceWars } from '@/simulation/modules/war'
 import { applyAnnex } from '@/simulation/modules/territory'
 import { applyBuildUnits, applyMobilize, militaryStrength } from '@/simulation/modules/military'
 import { applyDissolveOrganization } from '@/simulation/modules/government'
+import { applyFormAlliance } from '@/simulation/modules/diplomacy'
 import { produce } from 'immer'
 
 function fixedRng(seedValue: number) {
@@ -75,10 +76,11 @@ describe('war module', () => {
 
     let turn = 1
     let war = Object.values(state.wars)[0]
+    const rng = fixedRng(42)
     while (war.active && turn < 200) {
       turn++
       state = produce(state, (draft) => {
-        advanceWars(draft, turn)
+        advanceWars(draft, turn, rng)
       })
       war = state.wars[war.id]
     }
@@ -87,6 +89,35 @@ describe('war module', () => {
     for (const regionId of war.contestedRegionIds) {
       expect(state.regions[regionId].controllerId).toBe('USA')
     }
+  })
+
+  it('starts every declared war at escalation level 4 (limited conflict)', () => {
+    const state = createNewGame('USA')
+    const next = produce(state, (draft) => {
+      applyDeclareWar(draft, 'USA', 'PRK', 1)
+    })
+    expect(Object.values(next.wars)[0].level).toBe(4)
+  })
+
+  it('draws an ally into the war and raises its escalation level', () => {
+    let state = createNewGame('USA')
+    state = produce(state, (draft) => {
+      applyFormAlliance(draft, 'CAN', 'USA', 1)
+      applyDeclareWar(draft, 'USA', 'PRK', 1)
+    })
+    const warId = Object.keys(state.wars)[0]
+    expect(state.wars[warId].attackerIds).not.toContain('CAN')
+
+    const rng = () => 0 // always clears the ally-draw-in roll threshold
+    let turn = 1
+    for (let i = 0; i < 5 && !state.wars[warId].attackerIds.includes('CAN'); i++) {
+      turn++
+      state = produce(state, (draft) => {
+        advanceWars(draft, turn, rng)
+      })
+    }
+    expect(state.wars[warId].attackerIds).toContain('CAN')
+    expect(state.wars[warId].level).toBeGreaterThan(4)
   })
 })
 

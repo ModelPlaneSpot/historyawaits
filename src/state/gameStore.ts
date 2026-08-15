@@ -4,6 +4,7 @@ import { workerClient } from './workerClient'
 import { interpretCommand } from '@/command/commandOrchestrator'
 import { localAiEngine, type AiEngineStatus } from '@/ai/localAiEngine'
 import { sendAdvisorMessage, emptyAdvisorState, type AdvisorState } from '@/ai/advisorChat'
+import { buildTurnSummary, type TurnSummary } from './turnSummary'
 import {
   saveGame,
   loadGame,
@@ -13,6 +14,11 @@ import {
   loadAdvisorState,
   type SaveRecord,
 } from '@/persistence/db'
+
+export interface FocusTarget {
+  entityId: string | null
+  regionId: string | null
+}
 
 export interface LogEntry {
   id: string
@@ -37,6 +43,13 @@ interface GameStore {
   advisorBusy: boolean
   advisorError: string | null
 
+  turnSummary: TurnSummary | null
+  showTurnSummary: boolean
+  focusTarget: FocusTarget | null
+  focusNonce: number
+  cameraAutoFollow: boolean
+  newsOpen: boolean
+
   startNewGame: (playerEntityId: string) => Promise<void>
   continueFromSave: (id: string) => Promise<void>
   refreshSaves: () => Promise<void>
@@ -50,6 +63,11 @@ interface GameStore {
   returnToMenu: () => void
   toggleAdvisor: () => void
   askAdvisor: (text: string) => Promise<void>
+  focusOn: (target: FocusTarget) => void
+  clearFocus: () => void
+  setCameraAutoFollow: (v: boolean) => void
+  dismissTurnSummary: () => void
+  toggleNews: () => void
 }
 
 let logCounter = 0
@@ -72,6 +90,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   advisorOpen: false,
   advisorBusy: false,
   advisorError: null,
+
+  turnSummary: null,
+  showTurnSummary: false,
+  focusTarget: null,
+  focusNonce: 0,
+  cameraAutoFollow: true,
+  newsOpen: false,
 
   startNewGame: async (playerEntityId: string) => {
     set({ busy: true })
@@ -147,14 +172,29 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 
   endTurn: async () => {
+    const prevState = get().worldState
     set({ busy: true })
     const res = await workerClient.endTurn()
     if (res.type === 'STATE') {
+      const summary = prevState ? buildTurnSummary(prevState, res.state) : null
       set((s) => ({
         worldState: res.state,
         busy: false,
         log: [...s.log, makeLogEntry({ turn: res.state.turn, kind: 'system', text: `Turn ${res.state.turn} begins.` })],
+        turnSummary: summary,
+        showTurnSummary: summary !== null,
       }))
+
+      // Critical events (major war, civil war, coup, collapse, major
+      // territorial change...) pull the camera toward them automatically,
+      // unless the player has turned that off.
+      if (get().cameraAutoFollow) {
+        const critical = summary?.worldEvents.find((e) => e.importance === 'critical')
+        if (critical && (critical.locationEntityId || critical.locationRegionId)) {
+          get().focusOn({ entityId: critical.locationEntityId, regionId: critical.locationRegionId })
+        }
+      }
+
       await saveGame(res.state, 'Autosave', true)
       await get().refreshSaves()
     } else {
@@ -204,6 +244,12 @@ export const useGameStore = create<GameStore>((set, get) => ({
       set({ advisorBusy: false, advisorError: 'The advisor failed to respond. Try again.' })
     }
   },
+
+  focusOn: (target) => set((s) => ({ focusTarget: target, focusNonce: s.focusNonce + 1 })),
+  clearFocus: () => set({ focusTarget: null }),
+  setCameraAutoFollow: (v) => set({ cameraAutoFollow: v }),
+  dismissTurnSummary: () => set({ showTurnSummary: false }),
+  toggleNews: () => set((s) => ({ newsOpen: !s.newsOpen })),
 }))
 
 localAiEngine.onStatusChange((status) => {

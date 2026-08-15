@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { geoPath, geoNaturalEarth1, type GeoPath, type GeoProjection } from 'd3-geo'
 import { zoom as d3zoom, zoomIdentity, type ZoomTransform } from 'd3-zoom'
 import { select } from 'd3-selection'
+import 'd3-transition'
 import { feature } from 'topojson-client'
 import type { Topology, GeometryCollection } from 'topojson-specification'
 import RBush, { type BBox } from 'rbush'
@@ -43,22 +44,32 @@ function bboxOf(f: GeoJSON.Feature, projectedPath: GeoPath): BBox {
   return { minX: b[0][0], minY: b[0][1], maxX: b[1][0], maxY: b[1][1] }
 }
 
+export interface FocusTarget {
+  entityId: string | null
+  regionId: string | null
+}
+
 export interface MapViewProps {
   worldState: WorldState
   selectedEntityId: string | null
   selectedRegionId: string | null
   onSelectEntity: (id: string) => void
   onSelectRegion: (id: string, entityId: string) => void
+  focusTarget?: FocusTarget | null
+  focusNonce?: number
 }
 
 const UNKNOWN_COLOR = '#1c262b'
 const PLAYER_OUTLINE = '#e2b23c'
 const SELECTED_REGION_OUTLINE = '#f0c869'
 const FRONTLINE_COLOR = '#c0392b'
+const FRONTLINE_COLOR_DIM = 'rgba(192,57,43,0.5)'
 const SELECTED_ENTITY_OUTLINE = 'rgba(255,255,255,0.55)'
 const OCCUPIED_HATCH = 'rgba(10,10,10,0.4)'
 const CONTESTED_DOT = 'rgba(230,180,80,0.75)'
 const REBEL_HATCH = 'rgba(122,24,24,0.55)'
+const HIGHLIGHT_FLASH_COLOR = '#ffe98a'
+const HIGHLIGHT_FLASH_MS = 1600
 
 /** Every country/disputed-entity has a fixed mapColor from generation time
  *  (see scripts/data/country-colors.json) -- this is never computed here. */
@@ -74,6 +85,13 @@ function isAtWarWithPlayer(worldState: WorldState, entityId: string): boolean {
       ((w.attackerIds.includes(worldState.playerEntityId) && w.defenderIds.includes(entityId)) ||
         (w.defenderIds.includes(worldState.playerEntityId) && w.attackerIds.includes(entityId))),
   )
+}
+
+/** Any active war, anywhere -- used to give wars the player isn't even part
+ *  of a visible (if subtler) frontline, since the world keeps fighting
+ *  whether or not the player is watching. */
+function isAtWarWithAnyone(worldState: WorldState, entityId: string): boolean {
+  return Object.values(worldState.wars).some((w) => w.active && (w.attackerIds.includes(entityId) || w.defenderIds.includes(entityId)))
 }
 
 /** Draws a diagonal line-hatch clipped to whatever path is currently traced
@@ -114,14 +132,24 @@ function dotCurrentPath(ctx: CanvasRenderingContext2D, bounds: [[number, number]
   ctx.restore()
 }
 
-export function MapView({ worldState, selectedEntityId, selectedRegionId, onSelectEntity, onSelectRegion }: MapViewProps) {
+export function MapView({
+  worldState,
+  selectedEntityId,
+  selectedRegionId,
+  onSelectEntity,
+  onSelectRegion,
+  focusTarget = null,
+  focusNonce = 0,
+}: MapViewProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
+  const zoomBehaviorRef = useRef<ReturnType<typeof d3zoom<HTMLCanvasElement, unknown>> | null>(null)
   const [admin0, setAdmin0] = useState<Admin0Feature[] | null>(null)
   const [admin1, setAdmin1] = useState<Admin1Feature[] | null>(null)
   const [transform, setTransform] = useState<ZoomTransform>(zoomIdentity)
   const [size, setSize] = useState({ width: 960, height: 540 })
   const [hoverName, setHoverName] = useState<string | null>(null)
+  const [highlightRegionId, setHighlightRegionId] = useState<string | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -274,6 +302,16 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
         ctx.strokeStyle = FRONTLINE_COLOR
         ctx.stroke()
         ctx.restore()
+      } else if (isAtWarWithAnyone(worldState, controllerId)) {
+        // A war happening elsewhere in the world, not involving the player --
+        // still worth a visible (subtler) frontline so the world reads as
+        // active even when the player isn't part of the fighting.
+        ctx.save()
+        ctx.setLineDash([4 / k, 4 / k])
+        ctx.lineWidth = 1 / k
+        ctx.strokeStyle = FRONTLINE_COLOR_DIM
+        ctx.stroke()
+        ctx.restore()
       } else if (controllerId === selectedEntityId) {
         ctx.lineWidth = 1 / k
         ctx.strokeStyle = SELECTED_ENTITY_OUTLINE
@@ -284,6 +322,16 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
         ctx.lineWidth = 2.2 / k
         ctx.strokeStyle = SELECTED_REGION_OUTLINE
         ctx.stroke()
+      }
+
+      if (region?.id === highlightRegionId) {
+        ctx.save()
+        ctx.lineWidth = 3 / k
+        ctx.strokeStyle = HIGHLIGHT_FLASH_COLOR
+        ctx.shadowColor = HIGHLIGHT_FLASH_COLOR
+        ctx.shadowBlur = 12 / k
+        ctx.stroke()
+        ctx.restore()
       }
     }
 
@@ -315,7 +363,7 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     }
 
     ctx.restore()
-  }, [admin0, admin1ById, admin0FallbackIds, path, transform, size, selectedRegionId, selectedEntityId, worldState])
+  }, [admin0, admin1ById, admin0FallbackIds, path, transform, size, selectedRegionId, selectedEntityId, worldState, highlightRegionId])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -323,11 +371,66 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     const zoomBehavior = d3zoom<HTMLCanvasElement, unknown>()
       .scaleExtent([1, 60])
       .on('zoom', (event) => setTransform(event.transform))
+    zoomBehaviorRef.current = zoomBehavior
     select(canvas).call(zoomBehavior)
     return () => {
       select(canvas).on('.zoom', null)
     }
   }, [])
+
+  // Camera focus: pan/zoom smoothly to an entity or region and briefly
+  // highlight it. Keyed on focusNonce (not the target object) so re-focusing
+  // the same location twice in a row still re-triggers the animation.
+  useEffect(() => {
+    if (!focusTarget || (!focusTarget.entityId && !focusTarget.regionId) || !admin1 || !admin0) return
+    const canvas = canvasRef.current
+    const zoomBehavior = zoomBehaviorRef.current
+    if (!canvas || !zoomBehavior) return
+
+    let targetFeature: GeoJSON.Feature | null = null
+    let targetRegionId: string | null = null
+
+    if (focusTarget.regionId) {
+      const f = admin1ById.get(focusTarget.regionId)
+      if (f) {
+        targetFeature = f
+        targetRegionId = focusTarget.regionId
+      }
+    }
+    if (!targetFeature && focusTarget.entityId) {
+      const entity = worldState.entities[focusTarget.entityId]
+      const firstRegionId = entity?.territoryRegionIds[0]
+      const regionFeature = firstRegionId ? admin1ById.get(firstRegionId) : undefined
+      if (regionFeature) {
+        targetFeature = regionFeature
+        targetRegionId = firstRegionId ?? null
+      } else {
+        targetFeature = admin0.find((f) => resolveEntityIdForAdmin0(f) === focusTarget.entityId) ?? null
+      }
+    }
+    if (!targetFeature) return
+
+    const bounds = path.bounds(targetFeature as never)
+    const [[x0, y0], [x1, y1]] = bounds
+    const w = Math.max(1, x1 - x0)
+    const h = Math.max(1, y1 - y0)
+    const cx = (x0 + x1) / 2
+    const cy = (y0 + y1) / 2
+    const fitScale = 0.5 * Math.min(size.width / w, size.height / h)
+    const scale = Math.min(24, Math.max(3, fitScale))
+    const tx = size.width / 2 - scale * cx
+    const ty = size.height / 2 - scale * cy
+    const nextTransform = zoomIdentity.translate(tx, ty).scale(scale)
+
+    select(canvas).transition().duration(750).call(zoomBehavior.transform, nextTransform)
+
+    if (targetRegionId) {
+      setHighlightRegionId(targetRegionId)
+      const timeout = setTimeout(() => setHighlightRegionId(null), HIGHLIGHT_FLASH_MS)
+      return () => clearTimeout(timeout)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusNonce])
 
   function regionControllerId(regionId: string, fallbackHomeId: string): string {
     const region = worldState.regions[regionId]

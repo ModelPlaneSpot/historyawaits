@@ -4,9 +4,11 @@ import { MapView } from './map/MapView'
 import { EntityPanel } from './panels/EntityPanel'
 import { RegionPanel } from './panels/RegionPanel'
 import { NewsPanel } from './panels/NewsPanel'
+import { NewsFeedPanel } from './panels/NewsFeedPanel'
 import { CommandConsole } from './CommandConsole'
 import { AiStatusBadge } from './AiStatusBadge'
 import { AdvisorPanel } from './AdvisorPanel'
+import { TurnSummaryModal } from './TurnSummaryModal'
 import { formatGameDate } from '@/simulation/gameDate'
 
 export function GameScreen() {
@@ -15,11 +17,14 @@ export function GameScreen() {
   const selectedRegionId = useGameStore((s) => s.selectedRegionId)
   const selectEntity = useGameStore((s) => s.selectEntity)
   const selectRegionAndEntity = useGameStore((s) => s.selectRegionAndEntity)
+  const focusTarget = useGameStore((s) => s.focusTarget)
+  const focusNonce = useGameStore((s) => s.focusNonce)
   const endTurn = useGameStore((s) => s.endTurn)
   const saveNow = useGameStore((s) => s.saveNow)
   const returnToMenu = useGameStore((s) => s.returnToMenu)
   const busy = useGameStore((s) => s.busy)
   const toggleAdvisor = useGameStore((s) => s.toggleAdvisor)
+  const toggleNews = useGameStore((s) => s.toggleNews)
   const sidePanelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -43,6 +48,7 @@ export function GameScreen() {
         </span>
         <div className="spacer" />
         <AiStatusBadge />
+        <button onClick={toggleNews}>World News</button>
         <button onClick={toggleAdvisor}>AI Advisor</button>
         <button onClick={() => saveNow()}>Save</button>
         <button onClick={returnToMenu}>Menu</button>
@@ -57,6 +63,8 @@ export function GameScreen() {
           selectedRegionId={selectedRegionId}
           onSelectEntity={selectEntity}
           onSelectRegion={selectRegionAndEntity}
+          focusTarget={focusTarget}
+          focusNonce={focusNonce}
         />
         <div className="side-panel" ref={sidePanelRef}>
           {selectedRegion && <RegionPanel region={selectedRegion} worldState={worldState} />}
@@ -66,6 +74,8 @@ export function GameScreen() {
       </div>
       <CommandConsole />
       <AdvisorPanel />
+      <NewsFeedPanel />
+      <TurnSummaryModal />
     </div>
   )
 }

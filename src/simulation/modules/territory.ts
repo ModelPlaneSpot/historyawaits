@@ -30,14 +30,22 @@ export function applyAnnex(state: WorldState, actorId: string, targetId: string,
 
   if (targetRegion) {
     transferRegion(state, targetId, actorId)
-    pushNews(state, turn, `${actor?.name ?? actorId} annexes ${targetRegion.name}`, `${actor?.name ?? actorId} has annexed ${targetRegion.name}.`, [actorId], 'major')
+    pushNews(state, turn, `${actor?.name ?? actorId} annexes ${targetRegion.name}`, `${actor?.name ?? actorId} has annexed ${targetRegion.name}.`, [actorId], {
+      category: 'territorial',
+      importance: 'major',
+      locationRegionId: targetId,
+    })
     return true
   }
   if (targetEntity) {
     for (const regionId of [...targetEntity.territoryRegionIds]) {
       transferRegion(state, regionId, actorId)
     }
-    pushNews(state, turn, `${actor?.name ?? actorId} annexes ${targetEntity.name}`, `${actor?.name ?? actorId} has annexed all territory of ${targetEntity.name}.`, [actorId, targetId], 'major')
+    pushNews(state, turn, `${actor?.name ?? actorId} annexes ${targetEntity.name}`, `${actor?.name ?? actorId} has annexed all territory of ${targetEntity.name}.`, [actorId, targetId], {
+      category: 'territorial',
+      importance: 'critical',
+      locationEntityId: targetId,
+    })
     return true
   }
   return false
@@ -51,7 +59,11 @@ export function applyCedeTerritory(state: WorldState, actorId: string, regionId:
   const to = state.entities[toEntityId]
   if (!region || !actor || !to || region.controllerId !== actorId) return false
   transferRegion(state, regionId, toEntityId)
-  pushNews(state, turn, `${actor.name} cedes ${region.name} to ${to.name}`, `${actor.name} has ceded ${region.name} to ${to.name}.`, [actorId, toEntityId], 'notable')
+  pushNews(state, turn, `${actor.name} cedes ${region.name} to ${to.name}`, `${actor.name} has ceded ${region.name} to ${to.name}.`, [actorId, toEntityId], {
+    category: 'territorial',
+    importance: 'medium',
+    locationRegionId: regionId,
+  })
   return true
 }
 
@@ -150,6 +162,10 @@ export function applyGrantIndependence(state: WorldState, actorId: string, regio
   region.isCapitalRegion = true
   region.disputed = true
 
-  pushNews(state, turn, `${region.name} declares independence from ${parent.name}`, `${parent.name} has granted independence to ${region.name}, which is now the Republic of ${region.name}.`, [actorId, newId], 'major')
+  pushNews(state, turn, `${region.name} declares independence from ${parent.name}`, `${parent.name} has granted independence to ${region.name}, which is now the Republic of ${region.name}.`, [actorId, newId], {
+    category: 'territorial',
+    importance: 'critical',
+    locationRegionId: regionId,
+  })
   return newId
 }
