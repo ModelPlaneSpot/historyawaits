@@ -7,6 +7,7 @@ import type { Topology, GeometryCollection } from 'topojson-specification'
 import RBush, { type BBox } from 'rbush'
 import geoIndex from '@/data/generated/geoIndex.json'
 import type { WorldState } from '@/domain/schemas'
+import { MapLegend } from './MapLegend'
 
 interface Admin0Feature extends GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiPolygon> {
   id?: string | number
@@ -47,11 +48,82 @@ export interface MapViewProps {
   onSelectRegion: (id: string) => void
 }
 
-const STATUS_COLORS: Record<string, string> = {
-  player: '#e2b23c',
-  war: '#c0392b',
-  ally: '#3f7ea6',
-  neutral: '#3a4a52',
+const UNKNOWN_COLOR = '#1c262b'
+const PLAYER_OUTLINE = '#e2b23c'
+const SELECTED_REGION_OUTLINE = '#f0c869'
+const FRONTLINE_COLOR = '#c0392b'
+const OCCUPIED_HATCH = 'rgba(10,10,10,0.4)'
+const CONTESTED_DOT = 'rgba(230,180,80,0.75)'
+const REBEL_HATCH = 'rgba(122,24,24,0.55)'
+
+/** Every country/disputed-entity has a fixed mapColor from generation time
+ *  (see scripts/data/country-colors.json) -- this is never computed here. */
+function baseColorFor(worldState: WorldState, entityId: string): string {
+  return worldState.entities[entityId]?.mapColor ?? UNKNOWN_COLOR
+}
+
+/** The entity whose color a whole country blob should render as at world
+ *  zoom: its own color, unless its capital region has changed hands to
+ *  another state actor (a reasonable proxy for "this country has fallen"
+ *  without redrawing every region of every country every frame). */
+function effectiveController(worldState: WorldState, homeEntityId: string): string {
+  const home = worldState.entities[homeEntityId]
+  if (!home) return homeEntityId
+  const capitalRegion = home.territoryRegionIds
+    .map((id) => worldState.regions[id])
+    .find((r) => r?.isCapitalRegion)
+  if (capitalRegion && worldState.entities[capitalRegion.controllerId]) {
+    return capitalRegion.controllerId
+  }
+  return homeEntityId
+}
+
+function isAtWarWithPlayer(worldState: WorldState, entityId: string): boolean {
+  if (entityId === worldState.playerEntityId) return false
+  return Object.values(worldState.wars).some(
+    (w) =>
+      w.active &&
+      ((w.attackerIds.includes(worldState.playerEntityId) && w.defenderIds.includes(entityId)) ||
+        (w.defenderIds.includes(worldState.playerEntityId) && w.attackerIds.includes(entityId))),
+  )
+}
+
+/** Draws a diagonal line-hatch clipped to whatever path is currently traced
+ *  on the context. Must be called right after tracing the feature's path
+ *  (fill/stroke don't consume the current path, so it's still active). */
+function hatchCurrentPath(ctx: CanvasRenderingContext2D, bounds: [[number, number], [number, number]], color: string, spacing: number, k: number, crossHatch = false) {
+  ctx.save()
+  ctx.clip()
+  ctx.strokeStyle = color
+  ctx.lineWidth = 1 / k
+  const [[minX, minY], [maxX, maxY]] = bounds
+  const span = maxY - minY
+  const draw = (sign: 1 | -1) => {
+    ctx.beginPath()
+    for (let x = minX - span; x < maxX + span; x += spacing) {
+      ctx.moveTo(x, minY)
+      ctx.lineTo(x + sign * span, maxY)
+    }
+    ctx.stroke()
+  }
+  draw(1)
+  if (crossHatch) draw(-1)
+  ctx.restore()
+}
+
+function dotCurrentPath(ctx: CanvasRenderingContext2D, bounds: [[number, number], [number, number]], color: string, spacing: number, k: number) {
+  ctx.save()
+  ctx.clip()
+  ctx.fillStyle = color
+  const [[minX, minY], [maxX, maxY]] = bounds
+  for (let y = minY; y < maxY; y += spacing) {
+    for (let x = minX; x < maxX; x += spacing) {
+      ctx.beginPath()
+      ctx.arc(x, y, 0.9 / k, 0, Math.PI * 2)
+      ctx.fill()
+    }
+  }
+  ctx.restore()
 }
 
 export function MapView({ worldState, selectedEntityId, selectedRegionId, onSelectEntity, onSelectRegion }: MapViewProps) {
@@ -148,14 +220,6 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     return tree
   }, [admin1, admin1ByCountry, selectedEntityId, worldState, path])
 
-  function colorForEntity(entityId: string): string {
-    if (entityId === worldState.playerEntityId) return STATUS_COLORS.player
-    const relation = worldState.entities[worldState.playerEntityId]?.relations.find((r) => r.otherEntityId === entityId)
-    if (relation?.status === 'war') return STATUS_COLORS.war
-    if (relation?.status === 'allied') return STATUS_COLORS.ally
-    return STATUS_COLORS.neutral
-  }
-
   // Draw.
   useEffect(() => {
     const canvas = canvasRef.current
@@ -177,16 +241,42 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     ctx.fillRect(-transform.x / transform.k, -transform.y / transform.k, size.width / transform.k, size.height / transform.k)
 
     const renderPath = path.context(ctx)
+    const k = transform.k
 
     for (const f of admin0) {
-      const entityId = resolveEntityIdForAdmin0(f)
+      const homeEntityId = resolveEntityIdForAdmin0(f)
+      if (!homeEntityId) {
+        ctx.beginPath()
+        renderPath(f as never)
+        ctx.fillStyle = UNKNOWN_COLOR
+        ctx.fill()
+        continue
+      }
+      const controllerId = effectiveController(worldState, homeEntityId)
+      const fallen = controllerId !== homeEntityId
+
       ctx.beginPath()
       renderPath(f as never)
-      ctx.fillStyle = entityId ? colorForEntity(entityId) : '#1c262b'
+      ctx.fillStyle = baseColorFor(worldState, controllerId)
       ctx.fill()
-      ctx.lineWidth = 0.5 / transform.k
+      if (fallen) hatchCurrentPath(ctx, path.bounds(f as never), OCCUPIED_HATCH, 5, k)
+
+      ctx.lineWidth = 0.5 / k
       ctx.strokeStyle = '#0c1418'
       ctx.stroke()
+
+      if (homeEntityId === worldState.playerEntityId) {
+        ctx.lineWidth = 2 / k
+        ctx.strokeStyle = PLAYER_OUTLINE
+        ctx.stroke()
+      } else if (isAtWarWithPlayer(worldState, controllerId)) {
+        ctx.save()
+        ctx.setLineDash([6 / k, 4 / k])
+        ctx.lineWidth = 2 / k
+        ctx.strokeStyle = FRONTLINE_COLOR
+        ctx.stroke()
+        ctx.restore()
+      }
     }
 
     const selectedCountryIso3 =
@@ -197,13 +287,35 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
       const regionsForCountry = admin1ByCountry.get(selectedCountryIso3) ?? []
       for (const f of regionsForCountry) {
         const region = worldState.regions[f.properties.id]
+        if (!region) continue
+        const controllerIsState = !!worldState.entities[region.controllerId]
+        const displayColor = controllerIsState
+          ? baseColorFor(worldState, region.controllerId)
+          : baseColorFor(worldState, region.countryId)
+
         ctx.beginPath()
         renderPath(f as never)
-        ctx.fillStyle = region && region.id === selectedRegionId ? '#f0c869' : 'rgba(255,255,255,0.06)'
+        ctx.fillStyle = displayColor
         ctx.fill()
-        ctx.lineWidth = 0.7 / transform.k
-        ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+
+        const bounds = path.bounds(f as never)
+        if (!controllerIsState) {
+          hatchCurrentPath(ctx, bounds, REBEL_HATCH, 4, k, true)
+        } else if (region.controllerId !== region.countryId) {
+          hatchCurrentPath(ctx, bounds, OCCUPIED_HATCH, 4, k)
+        } else if (region.disputed) {
+          dotCurrentPath(ctx, bounds, CONTESTED_DOT, 5, k)
+        }
+
+        ctx.lineWidth = 0.6 / k
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'
         ctx.stroke()
+
+        if (region.id === selectedRegionId) {
+          ctx.lineWidth = 2 / k
+          ctx.strokeStyle = SELECTED_REGION_OUTLINE
+          ctx.stroke()
+        }
       }
     }
 
@@ -273,6 +385,7 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
       />
       {hoverName && <div className="map-hover-label">{hoverName}</div>}
       {!admin0 && <div className="map-loading">Loading world map...</div>}
+      <MapLegend />
     </div>
   )
 }

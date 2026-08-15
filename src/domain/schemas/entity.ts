@@ -17,6 +17,10 @@ const WorldEntityBase = z.object({
   officialName: z.string(),
   capital: z.string(),
   flagCode: z.string(),
+  /** Fixed for the entity's lifetime -- the single source of truth for its
+   *  color everywhere in the UI (map, panels, diplomacy, news, etc). Never
+   *  reassigned, so it survives save/load and stays stable across a game. */
+  mapColor: z.string().regex(/^#[0-9a-fA-F]{6}$/),
   latlng: z.tuple([z.number(), z.number()]),
   government: Government,
   parties: z.array(PoliticalParty),

@@ -3,10 +3,12 @@ import type { Region, WorldState } from '@/domain/schemas'
 export function RegionPanel({ region, worldState }: { region: Region; worldState: WorldState }) {
   const controller = worldState.entities[region.controllerId]
   const occupier = region.occupyingOrganizationId ? worldState.organizations[region.occupyingOrganizationId] : null
+  const swatchColor = (controller ?? worldState.entities[region.countryId])?.mapColor
   return (
     <section>
       <h3>Region</h3>
       <div className="entity-title">
+        {swatchColor && <span className="color-swatch" style={{ background: swatchColor }} />}
         <span>{region.name}</span>
       </div>
       <div className="stat-row">

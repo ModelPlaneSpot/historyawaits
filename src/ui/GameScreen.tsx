@@ -26,6 +26,7 @@ export function GameScreen() {
   return (
     <div className="game-screen">
       <div className="top-bar">
+        <span className="color-swatch" style={{ background: player.mapColor }} />
         <span className={`fi fi-${player.flagCode}`} />
         <strong>{player.name}</strong>
         <span className="turn-label">Turn {worldState.turn}</span>
@@ -48,7 +49,7 @@ export function GameScreen() {
         <div className="side-panel">
           {selectedEntity && <EntityPanel entity={selectedEntity} />}
           {selectedRegion && <RegionPanel region={selectedRegion} worldState={worldState} />}
-          <NewsPanel news={worldState.news} />
+          <NewsPanel news={worldState.news} worldState={worldState} />
         </div>
       </div>
       <CommandConsole />

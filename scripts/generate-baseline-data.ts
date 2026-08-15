@@ -3,6 +3,7 @@ import path from 'node:path'
 import worldCountries from 'world-countries'
 import seedOverrides from './data/seed-overrides.json'
 import organizationSeeds from './data/organizations.json'
+import countryColors from './data/country-colors.json'
 import {
   WorldEntity,
   Region,
@@ -45,6 +46,49 @@ function jitter(rng: () => number, min: number, max: number) {
 }
 function pick<T>(rng: () => number, items: T[]): T {
   return items[Math.floor(rng() * items.length)]
+}
+
+// ---------------------------------------------------------------------------
+// Map colors: the hand-curated database (scripts/data/country-colors.json) is
+// the single source of truth for every country/disputed-entity color, fixed
+// for that entity's lifetime. This fallback only exists for an entity that
+// (by some future data change) isn't in that table -- it must still never be
+// left uncolored, and must be visibly distinguishable from every known color.
+const COLOR_TABLE = countryColors as Record<string, string>
+const usedColors = new Set(Object.values(COLOR_TABLE).map((c) => c.toLowerCase()))
+
+function hslToHex(h: number, s: number, l: number): string {
+  const a = s * Math.min(l, 1 - l)
+  const f = (n: number) => {
+    const k = (n + h / 30) % 12
+    const color = l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+    return Math.round(255 * color)
+      .toString(16)
+      .padStart(2, '0')
+  }
+  return `#${f(0)}${f(8)}${f(4)}`.toUpperCase()
+}
+
+function generateFallbackColor(rng: () => number): string {
+  // Muted, earthy tones matching the hand-curated table's style.
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const hue = Math.floor(jitter(rng, 0, 360))
+    const sat = jitter(rng, 0.2, 0.4)
+    const light = jitter(rng, 0.32, 0.48)
+    const hex = hslToHex(hue, sat, light)
+    if (!usedColors.has(hex.toLowerCase())) {
+      usedColors.add(hex.toLowerCase())
+      return hex
+    }
+  }
+  throw new Error('Could not generate a distinguishable fallback map color')
+}
+
+function mapColorFor(name: string, id: string): string {
+  const known = COLOR_TABLE[name]
+  if (known) return known
+  console.warn(`No hand-curated map color for "${name}" (${id}); generating a fallback.`)
+  return generateFallbackColor(rngFor(id, 'mapColor'))
 }
 
 type SeedOverride = {
@@ -339,6 +383,7 @@ function buildEntity(identity: Identity): WorldEntity {
     officialName: identity.officialName,
     capital: identity.capital,
     flagCode: identity.cca2.toLowerCase(),
+    mapColor: mapColorFor(identity.name, identity.id),
     latlng: identity.latlng,
     government: {
       type: stats.governmentType,

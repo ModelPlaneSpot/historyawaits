@@ -52,6 +52,7 @@ export function MainMenu() {
                   className="entity-picker-row"
                   onClick={() => !busy && startNewGame(entity.id)}
                 >
+                  <span className="color-swatch" style={{ background: entity.mapColor }} />
                   <span className={`fi fi-${entity.flagCode}`} />
                   {entity.name}
                   {entity.kind === 'disputed_entity' && <span className="kind-tag">disputed</span>}

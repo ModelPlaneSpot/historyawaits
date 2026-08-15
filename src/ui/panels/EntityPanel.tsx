@@ -15,6 +15,7 @@ export function EntityPanel({ entity }: { entity: WorldEntity }) {
     <>
       <section>
         <div className="entity-title">
+          <span className="color-swatch" style={{ background: entity.mapColor }} />
           <span className={`fi fi-${entity.flagCode}`} />
           <span>{entity.name}</span>
         </div>

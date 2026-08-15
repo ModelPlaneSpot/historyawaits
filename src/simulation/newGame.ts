@@ -39,9 +39,9 @@ export function createNewGame(playerEntityId: string): WorldState {
   return WorldState.parse(state)
 }
 
-export function listPlayableEntities(): { id: string; name: string; kind: WorldEntity['kind']; flagCode: string }[] {
+export function listPlayableEntities(): { id: string; name: string; kind: WorldEntity['kind']; flagCode: string; mapColor: string }[] {
   const entities = entitiesData as unknown as Record<string, WorldEntity>
   return Object.values(entities)
-    .map((e) => ({ id: e.id, name: e.name, kind: e.kind, flagCode: e.flagCode }))
+    .map((e) => ({ id: e.id, name: e.name, kind: e.kind, flagCode: e.flagCode, mapColor: e.mapColor }))
     .sort((a, b) => a.name.localeCompare(b.name))
 }
