@@ -14,7 +14,7 @@ export function GameScreen() {
   const selectedEntityId = useGameStore((s) => s.selectedEntityId)
   const selectedRegionId = useGameStore((s) => s.selectedRegionId)
   const selectEntity = useGameStore((s) => s.selectEntity)
-  const selectRegion = useGameStore((s) => s.selectRegion)
+  const selectRegionAndEntity = useGameStore((s) => s.selectRegionAndEntity)
   const endTurn = useGameStore((s) => s.endTurn)
   const saveNow = useGameStore((s) => s.saveNow)
   const returnToMenu = useGameStore((s) => s.returnToMenu)
@@ -56,7 +56,7 @@ export function GameScreen() {
           selectedEntityId={selectedEntityId}
           selectedRegionId={selectedRegionId}
           onSelectEntity={selectEntity}
-          onSelectRegion={selectRegion}
+          onSelectRegion={selectRegionAndEntity}
         />
         <div className="side-panel" ref={sidePanelRef}>
           {selectedRegion && <RegionPanel region={selectedRegion} worldState={worldState} />}

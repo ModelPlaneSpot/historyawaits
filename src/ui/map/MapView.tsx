@@ -17,10 +17,13 @@ interface Admin1Feature extends GeoJSON.Feature<GeoJSON.Polygon | GeoJSON.MultiP
   properties: { id: string; name: string; countryIso3: string; countryIso2: string; regionType: string }
 }
 
-interface IndexedItem extends BBox {
+interface RegionIndexItem extends BBox {
+  regionId: string
+  feature: Admin1Feature
+}
+interface EntityIndexItem extends BBox {
   entityId: string
-  regionId: string | null
-  feature: GeoJSON.Feature
+  feature: Admin0Feature
 }
 
 const CCN3_TO_ENTITY: Record<string, string> = geoIndex.byCcn3
@@ -45,13 +48,14 @@ export interface MapViewProps {
   selectedEntityId: string | null
   selectedRegionId: string | null
   onSelectEntity: (id: string) => void
-  onSelectRegion: (id: string) => void
+  onSelectRegion: (id: string, entityId: string) => void
 }
 
 const UNKNOWN_COLOR = '#1c262b'
 const PLAYER_OUTLINE = '#e2b23c'
 const SELECTED_REGION_OUTLINE = '#f0c869'
 const FRONTLINE_COLOR = '#c0392b'
+const SELECTED_ENTITY_OUTLINE = 'rgba(255,255,255,0.55)'
 const OCCUPIED_HATCH = 'rgba(10,10,10,0.4)'
 const CONTESTED_DOT = 'rgba(230,180,80,0.75)'
 const REBEL_HATCH = 'rgba(122,24,24,0.55)'
@@ -60,22 +64,6 @@ const REBEL_HATCH = 'rgba(122,24,24,0.55)'
  *  (see scripts/data/country-colors.json) -- this is never computed here. */
 function baseColorFor(worldState: WorldState, entityId: string): string {
   return worldState.entities[entityId]?.mapColor ?? UNKNOWN_COLOR
-}
-
-/** The entity whose color a whole country blob should render as at world
- *  zoom: its own color, unless its capital region has changed hands to
- *  another state actor (a reasonable proxy for "this country has fallen"
- *  without redrawing every region of every country every frame). */
-function effectiveController(worldState: WorldState, homeEntityId: string): string {
-  const home = worldState.entities[homeEntityId]
-  if (!home) return homeEntityId
-  const capitalRegion = home.territoryRegionIds
-    .map((id) => worldState.regions[id])
-    .find((r) => r?.isCapitalRegion)
-  if (capitalRegion && worldState.entities[capitalRegion.controllerId]) {
-    return capitalRegion.controllerId
-  }
-  return homeEntityId
 }
 
 function isAtWarWithPlayer(worldState: WorldState, entityId: string): boolean {
@@ -178,47 +166,55 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
 
   const path = useMemo<GeoPath>(() => geoPath(projection), [projection])
 
-  const admin0Index = useMemo(() => {
-    if (!admin0) return null
-    const tree = new RBush<IndexedItem>()
-    const items: IndexedItem[] = admin0
-      .map((f) => {
-        const entityId = resolveEntityIdForAdmin0(f)
-        if (!entityId) return null
-        const item: IndexedItem = { ...bboxOf(f, path), entityId, regionId: null, feature: f }
-        return item
-      })
-      .filter((x): x is IndexedItem => x !== null)
-    tree.load(items)
-    return tree
-  }, [admin0, path])
-
-  const admin1ByCountry = useMemo(() => {
-    if (!admin1) return new Map<string, Admin1Feature[]>()
-    const map = new Map<string, Admin1Feature[]>()
-    for (const f of admin1) {
-      const list = map.get(f.properties.countryIso3) ?? []
-      list.push(f)
-      map.set(f.properties.countryIso3, list)
-    }
+  // Every admin-1 region on Earth, colored purely from live worldState.regions[id].controllerId
+  // at draw time -- this map holds no ownership data of its own, and the index below
+  // only depends on geometry (admin1/path), never on worldState, so annexing a region
+  // never requires rebuilding the spatial index, only a redraw.
+  const admin1ById = useMemo(() => {
+    const map = new Map<string, Admin1Feature>()
+    if (admin1) for (const f of admin1) map.set(f.properties.id, f)
     return map
   }, [admin1])
 
-  const admin1Index = useMemo(() => {
+  // Countries/disputed entities whose regions have no real admin-1 geometry
+  // (a handful: South Sudan, Kosovo, Western Sahara) fall back to their
+  // admin-0 country outline, still colored by that region's live controller.
+  const admin0FallbackIds = useMemo(() => {
+    const covered = new Set<string>()
+    if (admin1) for (const f of admin1) covered.add(f.properties.countryIso3)
+    const fallback = new Set<string>()
+    for (const entity of Object.values(worldState.entities)) {
+      if (!covered.has(entity.id)) fallback.add(entity.id)
+    }
+    return fallback
+  }, [admin1, worldState.entities])
+
+  const regionSpatialIndex = useMemo(() => {
     if (!admin1) return null
-    const tree = new RBush<IndexedItem>()
-    const selectedCountryIso3 =
-      selectedEntityId && 'cca3' in worldState.entities[selectedEntityId] ? selectedEntityId : null
-    const relevant = selectedCountryIso3 ? (admin1ByCountry.get(selectedCountryIso3) ?? []) : []
-    const items: IndexedItem[] = relevant.map((f) => ({
+    const tree = new RBush<RegionIndexItem>()
+    const items: RegionIndexItem[] = admin1.map((f) => ({
       ...bboxOf(f, path),
-      entityId: worldState.regions[f.properties.id]?.controllerId ?? f.properties.countryIso3,
       regionId: f.properties.id,
       feature: f,
     }))
     tree.load(items)
     return tree
-  }, [admin1, admin1ByCountry, selectedEntityId, worldState, path])
+  }, [admin1, path])
+
+  const entitySpatialIndex = useMemo(() => {
+    if (!admin0) return null
+    const tree = new RBush<EntityIndexItem>()
+    const items: EntityIndexItem[] = admin0
+      .map((f) => {
+        const entityId = resolveEntityIdForAdmin0(f)
+        if (!entityId) return null
+        const item: EntityIndexItem = { ...bboxOf(f, path), entityId, feature: f }
+        return item
+      })
+      .filter((x): x is EntityIndexItem => x !== null)
+    tree.load(items)
+    return tree
+  }, [admin0, path])
 
   // Draw.
   useEffect(() => {
@@ -229,8 +225,9 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     canvas.height = size.height * dpr
     canvas.style.width = `${size.width}px`
     canvas.style.height = `${size.height}px`
-    const ctx = canvas.getContext('2d')
-    if (!ctx) return
+    const ctx2d = canvas.getContext('2d')
+    if (!ctx2d) return
+    const ctx: CanvasRenderingContext2D = ctx2d
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
     ctx.clearRect(0, 0, size.width, size.height)
     ctx.save()
@@ -243,61 +240,15 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     const renderPath = path.context(ctx)
     const k = transform.k
 
-    for (const f of admin0) {
-      const homeEntityId = resolveEntityIdForAdmin0(f)
-      if (!homeEntityId) {
-        ctx.beginPath()
-        renderPath(f as never)
-        ctx.fillStyle = UNKNOWN_COLOR
-        ctx.fill()
-        continue
-      }
-      const controllerId = effectiveController(worldState, homeEntityId)
-      const fallen = controllerId !== homeEntityId
-
+    function paintRegion(f: GeoJSON.Feature, region: WorldState['regions'][string] | undefined, homeEntityId: string) {
+      const controllerIsState = !!(region && worldState.entities[region.controllerId])
+      const controllerId = controllerIsState ? region!.controllerId : homeEntityId
       ctx.beginPath()
       renderPath(f as never)
       ctx.fillStyle = baseColorFor(worldState, controllerId)
       ctx.fill()
-      if (fallen) hatchCurrentPath(ctx, path.bounds(f as never), OCCUPIED_HATCH, 5, k)
 
-      ctx.lineWidth = 0.5 / k
-      ctx.strokeStyle = '#0c1418'
-      ctx.stroke()
-
-      if (homeEntityId === worldState.playerEntityId) {
-        ctx.lineWidth = 2 / k
-        ctx.strokeStyle = PLAYER_OUTLINE
-        ctx.stroke()
-      } else if (isAtWarWithPlayer(worldState, controllerId)) {
-        ctx.save()
-        ctx.setLineDash([6 / k, 4 / k])
-        ctx.lineWidth = 2 / k
-        ctx.strokeStyle = FRONTLINE_COLOR
-        ctx.stroke()
-        ctx.restore()
-      }
-    }
-
-    const selectedCountryIso3 =
-      selectedEntityId && worldState.entities[selectedEntityId] && 'cca3' in worldState.entities[selectedEntityId]
-        ? selectedEntityId
-        : null
-    if (selectedCountryIso3) {
-      const regionsForCountry = admin1ByCountry.get(selectedCountryIso3) ?? []
-      for (const f of regionsForCountry) {
-        const region = worldState.regions[f.properties.id]
-        if (!region) continue
-        const controllerIsState = !!worldState.entities[region.controllerId]
-        const displayColor = controllerIsState
-          ? baseColorFor(worldState, region.controllerId)
-          : baseColorFor(worldState, region.countryId)
-
-        ctx.beginPath()
-        renderPath(f as never)
-        ctx.fillStyle = displayColor
-        ctx.fill()
-
+      if (region) {
         const bounds = path.bounds(f as never)
         if (!controllerIsState) {
           hatchCurrentPath(ctx, bounds, REBEL_HATCH, 4, k, true)
@@ -306,27 +257,71 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
         } else if (region.disputed) {
           dotCurrentPath(ctx, bounds, CONTESTED_DOT, 5, k)
         }
+      }
 
-        ctx.lineWidth = 0.6 / k
-        ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+      ctx.lineWidth = 0.4 / k
+      ctx.strokeStyle = 'rgba(12,20,24,0.6)'
+      ctx.stroke()
+
+      if (controllerId === worldState.playerEntityId) {
+        ctx.lineWidth = 1.4 / k
+        ctx.strokeStyle = PLAYER_OUTLINE
         ctx.stroke()
+      } else if (isAtWarWithPlayer(worldState, controllerId)) {
+        ctx.save()
+        ctx.setLineDash([5 / k, 3 / k])
+        ctx.lineWidth = 1.4 / k
+        ctx.strokeStyle = FRONTLINE_COLOR
+        ctx.stroke()
+        ctx.restore()
+      } else if (controllerId === selectedEntityId) {
+        ctx.lineWidth = 1 / k
+        ctx.strokeStyle = SELECTED_ENTITY_OUTLINE
+        ctx.stroke()
+      }
 
-        if (region.id === selectedRegionId) {
-          ctx.lineWidth = 2 / k
-          ctx.strokeStyle = SELECTED_REGION_OUTLINE
-          ctx.stroke()
-        }
+      if (region?.id === selectedRegionId) {
+        ctx.lineWidth = 2.2 / k
+        ctx.strokeStyle = SELECTED_REGION_OUTLINE
+        ctx.stroke()
       }
     }
 
+    // Base layer: every admin-1 region, live-colored by its current controller.
+    for (const f of admin1ById.values()) {
+      const region = worldState.regions[f.properties.id]
+      paintRegion(f, region, f.properties.countryIso3)
+    }
+
+    // Fallback layer: entities with no admin-1 geometry render as their whole
+    // admin-0 outline instead, still driven by their single region's live controller.
+    for (const f of admin0) {
+      const homeEntityId = resolveEntityIdForAdmin0(f)
+      if (!homeEntityId || !admin0FallbackIds.has(homeEntityId)) continue
+      const home = worldState.entities[homeEntityId]
+      const regionId = home?.territoryRegionIds[0]
+      const region = regionId ? worldState.regions[regionId] : undefined
+      paintRegion(f, region, homeEntityId)
+    }
+
+    // Political (admin-0) borders drawn as a bolder overlay on top of the
+    // region fills, purely for visual country grouping -- not a data source.
+    ctx.lineWidth = 1 / k
+    ctx.strokeStyle = 'rgba(12,20,24,0.85)'
+    for (const f of admin0) {
+      ctx.beginPath()
+      renderPath(f as never)
+      ctx.stroke()
+    }
+
     ctx.restore()
-  }, [admin0, admin1ByCountry, path, transform, size, selectedEntityId, selectedRegionId, worldState])
+  }, [admin0, admin1ById, admin0FallbackIds, path, transform, size, selectedRegionId, selectedEntityId, worldState])
 
   useEffect(() => {
     const canvas = canvasRef.current
     if (!canvas) return
     const zoomBehavior = d3zoom<HTMLCanvasElement, unknown>()
-      .scaleExtent([1, 12])
+      .scaleExtent([1, 60])
       .on('zoom', (event) => setTransform(event.transform))
     select(canvas).call(zoomBehavior)
     return () => {
@@ -334,24 +329,40 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     }
   }, [])
 
+  function regionControllerId(regionId: string, fallbackHomeId: string): string {
+    const region = worldState.regions[regionId]
+    if (region && worldState.entities[region.controllerId]) return region.controllerId
+    return fallbackHomeId
+  }
+
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = (e.clientX - rect.left - transform.x) / transform.k
     const y = (e.clientY - rect.top - transform.y) / transform.k
 
-    if (admin1Index) {
-      const hits = admin1Index.search({ minX: x, minY: y, maxX: x, maxY: y })
+    if (regionSpatialIndex) {
+      const hits = regionSpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
       for (const hit of hits) {
         if (pointInFeature(x, y, hit.feature, projection)) {
-          if (hit.regionId) onSelectRegion(hit.regionId)
+          const entityId = regionControllerId(hit.regionId, hit.feature.properties.countryIso3)
+          onSelectRegion(hit.regionId, entityId)
           return
         }
       }
     }
-    if (admin0Index) {
-      const hits = admin0Index.search({ minX: x, minY: y, maxX: x, maxY: y })
+    if (entitySpatialIndex) {
+      const hits = entitySpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
       for (const hit of hits) {
         if (pointInFeature(x, y, hit.feature, projection)) {
+          if (admin0FallbackIds.has(hit.entityId)) {
+            const home = worldState.entities[hit.entityId]
+            const regionId = home?.territoryRegionIds[0]
+            if (regionId) {
+              const entityId = regionControllerId(regionId, hit.entityId)
+              onSelectRegion(regionId, entityId)
+              return
+            }
+          }
           onSelectEntity(hit.entityId)
           return
         }
@@ -363,8 +374,19 @@ export function MapView({ worldState, selectedEntityId, selectedRegionId, onSele
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = (e.clientX - rect.left - transform.x) / transform.k
     const y = (e.clientY - rect.top - transform.y) / transform.k
-    if (admin0Index) {
-      const hits = admin0Index.search({ minX: x, minY: y, maxX: x, maxY: y })
+    if (regionSpatialIndex) {
+      const hits = regionSpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
+      for (const hit of hits) {
+        if (pointInFeature(x, y, hit.feature, projection)) {
+          const entityId = regionControllerId(hit.regionId, hit.feature.properties.countryIso3)
+          const name = worldState.entities[entityId]?.name
+          setHoverName(name ? `${hit.feature.properties.name} (${name})` : hit.feature.properties.name)
+          return
+        }
+      }
+    }
+    if (entitySpatialIndex) {
+      const hits = entitySpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
       for (const hit of hits) {
         if (pointInFeature(x, y, hit.feature, projection)) {
           setHoverName(worldState.entities[hit.entityId]?.name ?? null)

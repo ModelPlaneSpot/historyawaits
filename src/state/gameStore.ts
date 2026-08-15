@@ -44,6 +44,7 @@ interface GameStore {
   endTurn: () => Promise<void>
   selectEntity: (id: string | null) => void
   selectRegion: (id: string | null) => void
+  selectRegionAndEntity: (regionId: string, entityId: string) => void
   enableAi: () => Promise<void>
   saveNow: (name?: string) => Promise<void>
   returnToMenu: () => void
@@ -163,6 +164,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   selectEntity: (id) => set({ selectedEntityId: id, selectedRegionId: null }),
   selectRegion: (id) => set({ selectedRegionId: id }),
+  selectRegionAndEntity: (regionId, entityId) => set({ selectedRegionId: regionId, selectedEntityId: entityId }),
 
   enableAi: async () => {
     await localAiEngine.initialize()

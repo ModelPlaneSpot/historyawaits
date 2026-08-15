@@ -245,7 +245,11 @@ h3 {
   background: var(--bg-panel);
   display: flex;
   flex-direction: column;
-  max-height: 220px;
+  /* Fixed, not max-height: the map's container size (and therefore its
+     projection/zoom math) must never shift just because the log grew a
+     line -- only .command-log scrolls internally. */
+  height: 220px;
+  flex-shrink: 0;
 }
 .command-log {
   overflow-y: auto;
