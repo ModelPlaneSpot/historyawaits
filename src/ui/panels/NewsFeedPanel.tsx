@@ -8,9 +8,11 @@ export function NewsFeedPanel() {
   const toggleNews = useGameStore((s) => s.toggleNews)
   const worldState = useGameStore((s) => s.worldState)
   const focusOn = useGameStore((s) => s.focusOn)
+  const openStory = useGameStore((s) => s.openStory)
   const cameraAutoFollow = useGameStore((s) => s.cameraAutoFollow)
   const setCameraAutoFollow = useGameStore((s) => s.setCameraAutoFollow)
   const [activeCategories, setActiveCategories] = useState<Set<NewsCategory>>(new Set())
+  const [search, setSearch] = useState('')
 
   if (!open || !worldState) return null
 
@@ -23,10 +25,16 @@ export function NewsFeedPanel() {
     })
   }
 
+  const query = search.trim().toLowerCase()
   const items = [...worldState!.news]
     .reverse()
     .filter((n) => activeCategories.size === 0 || activeCategories.has(n.category))
+    .filter((n) => !query || n.headline.toLowerCase().includes(query) || n.body.toLowerCase().includes(query))
     .slice(0, 300)
+
+  const followedStories = Object.values(worldState.storyEvents)
+    .filter((s) => s.followed)
+    .sort((a, b) => (b.stages.at(-1)?.turn ?? 0) - (a.stages.at(-1)?.turn ?? 0))
 
   return (
     <div className="advisor-overlay" onClick={toggleNews}>
@@ -41,6 +49,26 @@ export function NewsFeedPanel() {
             ✕
           </button>
         </div>
+
+        <div className="news-search-row">
+          <input
+            className="news-search-input"
+            placeholder="Search the world's history (e.g. &quot;Thailand Cambodia&quot;)…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
+        {followedStories.length > 0 && (
+          <div className="followed-events-row">
+            <span className="followed-events-label">★ Following:</span>
+            {followedStories.map((s) => (
+              <button key={s.id} className="followed-event-chip" onClick={() => openStory(s.id)}>
+                {s.title}
+              </button>
+            ))}
+          </div>
+        )}
 
         <div className="news-category-filters">
           {ALL_CATEGORIES.map((cat) => (
@@ -64,17 +92,23 @@ export function NewsFeedPanel() {
           {items.map((n) => {
             const clickable = !!(n.locationEntityId || n.locationRegionId)
             return (
-              <article
-                key={n.id}
-                className={`news-feed-item importance-${n.importance} ${clickable ? 'clickable' : ''}`}
-                onClick={() => clickable && focusOn({ entityId: n.locationEntityId, regionId: n.locationRegionId })}
-              >
+              <article key={n.id} className={`news-feed-item importance-${n.importance}`}>
                 <header>
                   <span className="news-icon">{CATEGORY_ICONS[n.category]}</span>
-                  <span className="news-feed-headline">{n.headline}</span>
+                  <span
+                    className={`news-feed-headline ${clickable ? 'clickable' : ''}`}
+                    onClick={() => clickable && focusOn({ entityId: n.locationEntityId, regionId: n.locationRegionId })}
+                  >
+                    {n.headline}
+                  </span>
                   <span className="news-feed-turn">T{n.turn}</span>
                 </header>
                 <p>{n.body}</p>
+                {n.storyEventId && (
+                  <button className="read-full-story-link" onClick={() => openStory(n.storyEventId!)}>
+                    Read full story →
+                  </button>
+                )}
               </article>
             )
           })}

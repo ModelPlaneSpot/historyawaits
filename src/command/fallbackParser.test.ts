@@ -160,6 +160,7 @@ describe('actionValidator end-to-end via fallback parser', () => {
         active: true,
         level: 4,
         isCivilWar: false,
+        storyEventId: null,
       }
     })
     const canadaRegion = state.entities.CAN.territoryRegionIds[0]

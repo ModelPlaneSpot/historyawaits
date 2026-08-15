@@ -16,5 +16,7 @@ export const War = z.object({
    *  countries are drawn in (see considerAllyDrawIn in war.ts). */
   level: z.number().int().min(1).max(7),
   isCivilWar: z.boolean(),
+  /** The persistent StoryEvent tracking this war's long-form narrative. */
+  storyEventId: z.string().nullable(),
 })
 export type War = z.infer<typeof War>

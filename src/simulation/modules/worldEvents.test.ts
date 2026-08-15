@@ -5,7 +5,7 @@ import {
   considerProtest,
   considerEconomicShift,
   considerNaturalDisaster,
-  considerBorderTension,
+  considerDiplomaticEscalation,
   considerTerroristAttack,
   considerResourceEvent,
 } from './worldEvents'
@@ -55,9 +55,10 @@ describe('considerEconomicShift', () => {
     const next = produce(state, (draft) => {
       considerEconomicShift(draft, draft.entities.USA, 3, alwaysHit)
     })
-    const news = next.news.find((n) => n.headline.includes('enters a recession'))
+    const news = next.news.find((n) => /enters a recession/i.test(n.headline))
     expect(news).toBeDefined()
     expect(news?.category).toBe('economy')
+    expect(news?.storyEventId).toBeTruthy()
     expect(next.entities.USA.economy.growthRatePct).toBeLessThan(growthBefore)
   })
 })
@@ -115,51 +116,78 @@ describe('considerTerroristAttack', () => {
   })
 })
 
-describe('considerBorderTension', () => {
-  it('escalates two hostile same-subregion countries into a border incident or skirmish', () => {
+function samesubregionPair(state: ReturnType<typeof createNewGame>): [string, string] {
+  const countries = Object.values(state.entities).filter((e) => e.kind === 'country')
+  const bySubregion = new Map<string, string[]>()
+  for (const c of countries) {
+    const list = bySubregion.get(c.subregion) ?? []
+    list.push(c.id)
+    bySubregion.set(c.subregion, list)
+  }
+  const pair = [...bySubregion.values()].find((ids) => ids.length >= 2)
+  expect(pair).toBeDefined()
+  return [pair![0], pair![1]]
+}
+
+describe('considerDiplomaticEscalation', () => {
+  it('opens a diplomatic_crisis story on the first escalation between hostile neighbors', () => {
     const state = createNewGame('USA')
-    const countries = Object.values(state.entities).filter((e) => e.kind === 'country')
-    const bySubregion = new Map<string, string[]>()
-    for (const c of countries) {
-      const list = bySubregion.get(c.subregion) ?? []
-      list.push(c.id)
-      bySubregion.set(c.subregion, list)
-    }
-    const pair = [...bySubregion.values()].find((ids) => ids.length >= 2)
-    expect(pair).toBeDefined()
-    const [aId, bId] = pair!
+    const [aId, bId] = samesubregionPair(state)
 
     const next = produce(state, (draft) => {
-      const a = draft.entities[aId]
-      a.relations.push({ otherEntityId: bId, opinion: -90, status: 'hostile', treatyIds: [] })
-      considerBorderTension(draft, 7, alwaysHit)
+      draft.entities[aId].relations.push({ otherEntityId: bId, opinion: -50, status: 'hostile', treatyIds: [] })
+      considerDiplomaticEscalation(draft, 1, alwaysHit)
     })
-    const news = next.news.find((n) => n.entityIds.includes(aId) && n.entityIds.includes(bId))
+    const story = Object.values(next.storyEvents).find((s) => s.type === 'diplomatic_crisis' && s.countryIds.includes(aId) && s.countryIds.includes(bId))
+    expect(story).toBeDefined()
+    expect(story?.stages).toHaveLength(1)
+    const news = next.news.find((n) => n.storyEventId === story!.id)
     expect(news).toBeDefined()
-    expect(news?.category).toBe('military')
+    expect(news?.category).toBe('diplomacy')
   })
 
   it('never fires between two allied countries even with a forced rng', () => {
     const state = createNewGame('USA')
-    const countries = Object.values(state.entities).filter((e) => e.kind === 'country')
-    const bySubregion = new Map<string, string[]>()
-    for (const c of countries) {
-      const list = bySubregion.get(c.subregion) ?? []
-      list.push(c.id)
-      bySubregion.set(c.subregion, list)
-    }
-    const pair = [...bySubregion.values()].find((ids) => ids.length >= 2)
-    const [aId, bId] = pair!
+    const [aId, bId] = samesubregionPair(state)
     const next = produce(state, (draft) => {
-      const a = draft.entities[aId]
-      a.relations.push({ otherEntityId: bId, opinion: 90, status: 'allied', treatyIds: [] })
-      considerBorderTension(draft, 7, alwaysHit)
+      draft.entities[aId].relations.push({ otherEntityId: bId, opinion: 90, status: 'allied', treatyIds: [] })
+      considerDiplomaticEscalation(draft, 7, alwaysHit)
     })
     // Other, unrelated hostile pairs elsewhere in the baseline data are free
     // to fire (that's the point of a world that moves on its own) -- what
     // must never happen is THIS allied pair getting a border incident.
     const newsForPair = next.news.filter((n) => n.entityIds.includes(aId) && n.entityIds.includes(bId))
     expect(newsForPair).toHaveLength(0)
+  })
+
+  it('escalates a hostile pair all the way from tension to a declared war on one persistent story (Thailand/Cambodia-style arc)', () => {
+    let state = createNewGame('USA')
+    const [aId, bId] = samesubregionPair(state)
+    state = produce(state, (draft) => {
+      draft.entities[aId].relations.push({ otherEntityId: bId, opinion: -50, status: 'hostile', treatyIds: [] })
+    })
+
+    let turn = 1
+    let war = Object.values(state.wars).find((w) => w.attackerIds.includes(aId) && w.defenderIds.includes(bId))
+    for (let i = 0; i < 10 && !war; i++) {
+      turn++
+      state = produce(state, (draft) => {
+        considerDiplomaticEscalation(draft, turn, alwaysHit)
+      })
+      war = Object.values(state.wars).find(
+        (w) => (w.attackerIds.includes(aId) && w.defenderIds.includes(bId)) || (w.attackerIds.includes(bId) && w.defenderIds.includes(aId)),
+      )
+    }
+
+    expect(war).toBeDefined()
+    expect(war!.active).toBe(true)
+    const story = state.storyEvents[war!.storyEventId!]
+    expect(story).toBeDefined()
+    expect(story.type).toBe('war')
+    // The story should read as a developing narrative, not a single blip --
+    // tension, then at least one escalation stage, then the war declaration.
+    expect(story.stages.length).toBeGreaterThanOrEqual(3)
+    expect(story.stages[story.stages.length - 1].headline).toContain('DESCEND INTO WAR')
   })
 })
 

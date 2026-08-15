@@ -1,5 +1,7 @@
 import type { WorldState, WorldEntity } from '@/domain/schemas'
 import { pushNews } from './news'
+import { createStory } from './story'
+import { buildCoupNarrative, buildElectionNarrative } from './storyTemplates'
 
 export function advanceGovernment(state: WorldState, entity: WorldEntity, turn: number, rng: () => number): void {
   const gov = entity.government
@@ -45,21 +47,40 @@ function resolveElection(state: WorldState, entity: WorldEntity, turn: number): 
   gov.electionDueTurn = turn + 208 // ~4 years, in weekly turns
   if (changed) {
     gov.stability = clamp(gov.stability + 10, 0, 100)
-    pushNews(state, turn, `${winner.name} wins election in ${entity.name}`, `${winner.name} has won the general election in ${entity.name}, forming a new government.`, [entity.id], {
-      category: 'politics',
+    const title = `${winner.name.toUpperCase()} WINS ELECTION IN ${entity.name.toUpperCase()}`
+    createStory(state, turn, {
+      type: 'election',
+      title,
       importance: 'medium',
+      category: 'politics',
+      countryIds: [entity.id],
+      regionIds: [],
+      headline: title,
+      body: `${winner.name} has won the general election in ${entity.name}, forming a new government.`,
+      locationEntityId: entity.id,
+      ...buildElectionNarrative(entity, winner.name),
     })
   }
 }
 
 function triggerCoup(state: WorldState, entity: WorldEntity, turn: number): void {
+  const narrative = buildCoupNarrative(entity)
   entity.government.type = 'military_junta'
   entity.government.stability = 40
   entity.government.coupRisk = 5
   entity.government.electionDueTurn = null
-  pushNews(state, turn, `Coup in ${entity.name}`, `The military has seized power in ${entity.name}.`, [entity.id], {
-    category: 'politics',
+  const title = `MILITARY COUP OUSTS GOVERNMENT IN ${entity.name.toUpperCase()}`
+  createStory(state, turn, {
+    type: 'coup',
+    title,
     importance: 'critical',
+    category: 'politics',
+    countryIds: [entity.id],
+    regionIds: [],
+    headline: title,
+    body: `The military has seized power in ${entity.name}.`,
+    locationEntityId: entity.id,
+    ...narrative,
   })
 }
 

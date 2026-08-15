@@ -35,8 +35,10 @@ export function createNewGame(playerEntityId: string): WorldState {
         importance: 'minor',
         locationEntityId: playerEntityId,
         locationRegionId: null,
+        storyEventId: null,
       },
     ],
+    storyEvents: {},
   }
 
   return WorldState.parse(state)

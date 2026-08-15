@@ -1,16 +1,59 @@
-import type { WorldState, War } from '@/domain/schemas'
+import type { WorldState, War, NewsCategory, NewsImportance, StoryStatus } from '@/domain/schemas'
 import { militaryStrength } from './military'
 import { setRelationStatus, adjustOpinion } from './diplomacy'
 import { transferRegion } from './territory'
 import { pushNews } from './news'
+import { createStory, appendStoryStage } from './story'
+import { buildWarNarrative } from './storyTemplates'
 
-export function applyDeclareWar(state: WorldState, actorId: string, targetId: string, turn: number): string | null {
+/** Declares war and links it to a persistent story -- either upgrading an
+ *  already-developing story (e.g. a diplomatic_crisis that escalated all the
+ *  way to war) if `existingStoryId` is given, or starting a fresh one. */
+export function applyDeclareWar(state: WorldState, actorId: string, targetId: string, turn: number, existingStoryId?: string | null): string | null {
   const actor = state.entities[actorId]
   const target = state.entities[targetId]
   if (!actor || !target) return null
-  const id = `WAR-${actorId}-${targetId}-${turn}`
-  state.wars[id] = {
-    id,
+  const warId = `WAR-${actorId}-${targetId}-${turn}`
+
+  setRelationStatus(state, actorId, targetId, 'war')
+  const relOpinion = actor.relations.find((r) => r.otherEntityId === targetId)?.opinion ?? null
+  const narrative = buildWarNarrative(actor, target, relOpinion)
+  const title = `${actor.name.toUpperCase()} AND ${target.name.toUpperCase()} DESCEND INTO WAR`
+  const body = `${actor.name} has formally declared war on ${target.name}.`
+
+  const existing = existingStoryId ? state.storyEvents[existingStoryId] : null
+  let storyId: string
+  if (existing) {
+    existing.type = 'war'
+    existing.title = title
+    appendStoryStage(state, existing.id, turn, {
+      headline: title,
+      body,
+      category: 'war',
+      importance: 'critical',
+      locationEntityId: targetId,
+      situation: narrative.situation,
+      consequences: narrative.consequences,
+      addCountryIds: [actorId, targetId],
+    })
+    storyId = existing.id
+  } else {
+    storyId = createStory(state, turn, {
+      type: 'war',
+      title,
+      importance: 'critical',
+      category: 'war',
+      countryIds: [actorId, targetId],
+      regionIds: target.territoryRegionIds.slice(0, 3),
+      headline: title,
+      body,
+      locationEntityId: targetId,
+      ...narrative,
+    })
+  }
+
+  state.wars[warId] = {
+    id: warId,
     attackerIds: [actorId],
     defenderIds: [targetId],
     startTurn: turn,
@@ -21,14 +64,41 @@ export function applyDeclareWar(state: WorldState, actorId: string, targetId: st
     active: true,
     level: 4,
     isCivilWar: false,
+    storyEventId: storyId,
   }
-  setRelationStatus(state, actorId, targetId, 'war')
-  pushNews(state, turn, `${actor.name} declares war on ${target.name}`, `${actor.name} has formally declared war on ${target.name}.`, [actorId, targetId], {
-    category: 'war',
-    importance: 'critical',
-    locationEntityId: targetId,
-  })
-  return id
+  return warId
+}
+
+/** Reports a development in an ongoing war -- appends to the linked story
+ *  when one exists (the normal case), or falls back to a plain news item for
+ *  wars with no story attached (hand-built in tests, or from an older save). */
+function reportWarEvent(
+  state: WorldState,
+  war: War,
+  turn: number,
+  opts: {
+    headline: string
+    body: string
+    category: NewsCategory
+    importance: NewsImportance
+    locationEntityId?: string | null
+    locationRegionId?: string | null
+    situation?: string
+    consequences?: string
+    status?: StoryStatus
+    addCountryIds?: string[]
+  },
+): void {
+  if (war.storyEventId) {
+    appendStoryStage(state, war.storyEventId, turn, opts)
+  } else {
+    pushNews(state, turn, opts.headline, opts.body, [...war.attackerIds, ...war.defenderIds], {
+      category: opts.category,
+      importance: opts.importance,
+      locationEntityId: opts.locationEntityId,
+      locationRegionId: opts.locationRegionId,
+    })
+  }
 }
 
 export function applyProposePeace(state: WorldState, actorId: string, targetId: string, turn: number): boolean {
@@ -44,10 +114,14 @@ export function applyProposePeace(state: WorldState, actorId: string, targetId: 
   for (const a of war.attackerIds) for (const d of war.defenderIds) setRelationStatus(state, a, d, 'hostile')
   const actor = state.entities[actorId]
   const target = state.entities[targetId]
-  pushNews(state, turn, `Peace between ${actor?.name ?? actorId} and ${target?.name ?? targetId}`, 'A ceasefire has been agreed.', [actorId, targetId], {
+  reportWarEvent(state, war, turn, {
+    headline: `Ceasefire Ends Fighting Between ${actor?.name ?? actorId} and ${target?.name ?? targetId}`,
+    body: `${actor?.name ?? actorId} and ${target?.name ?? targetId} have agreed to a ceasefire, bringing active hostilities to an end.`,
     category: 'war',
     importance: 'major',
     locationEntityId: actorId,
+    consequences: 'Both sides are expected to begin reconstruction and reassess military posture following the end of hostilities.',
+    status: 'resolved',
   })
   return true
 }
@@ -109,14 +183,13 @@ function advanceFrontline(state: WorldState, war: War, balance: number, turn: nu
   const winner = state.entities[winnerId]
   const recaptured = region.countryId === winnerId
   transferRegion(state, regionId, winnerId)
-  pushNews(
-    state,
-    turn,
-    recaptured ? `${winner?.name ?? winnerId} recaptures ${region.name}` : `${winner?.name ?? winnerId} captures ${region.name}`,
-    `${winner?.name ?? winnerId} has ${recaptured ? 'recaptured' : 'captured'} ${region.name} on the front line.`,
-    [winnerId],
-    { category: war.isCivilWar ? 'civil_conflict' : 'war', importance: 'medium', locationRegionId: regionId },
-  )
+  reportWarEvent(state, war, turn, {
+    headline: recaptured ? `${winner?.name ?? winnerId} Recaptures ${region.name}` : `${winner?.name ?? winnerId} Captures ${region.name}`,
+    body: `${winner?.name ?? winnerId} has ${recaptured ? 'recaptured' : 'captured'} ${region.name} on the front line.`,
+    category: war.isCivilWar ? 'civil_conflict' : 'war',
+    importance: 'medium',
+    locationRegionId: regionId,
+  })
 }
 
 /** Countries allied with a side already in the war have a small per-turn
@@ -133,10 +206,13 @@ function considerAllyDrawIn(state: WorldState, war: War, turn: number, rng: () =
 
     if (alliedWithAttacker) war.attackerIds.push(entity.id)
     else war.defenderIds.push(entity.id)
-    pushNews(state, turn, `${entity.name} joins the war`, `${entity.name} has entered the conflict in support of its ally.`, [entity.id], {
+    reportWarEvent(state, war, turn, {
+      headline: `${entity.name} Joins the War`,
+      body: `${entity.name} has entered the conflict in support of its ally.`,
       category: 'war',
       importance: 'major',
       locationEntityId: entity.id,
+      addCountryIds: [entity.id],
     })
   }
 }
@@ -157,16 +233,17 @@ function resolveWar(state: WorldState, war: War, winnerId: string, turn: number)
   }
   for (const a of war.attackerIds) for (const d of war.defenderIds) setRelationStatus(state, a, d, 'hostile')
   const winner = state.entities[winnerId]
-  pushNews(
-    state,
-    turn,
-    war.isCivilWar ? `Civil war in ${winner?.name ?? winnerId} ends` : `${winner?.name ?? winnerId} wins the war`,
-    war.isCivilWar
+  reportWarEvent(state, war, turn, {
+    headline: war.isCivilWar ? `Civil War in ${winner?.name ?? winnerId} Ends` : `${winner?.name ?? winnerId} Wins the War`,
+    body: war.isCivilWar
       ? `The civil war has ended with ${winner?.name ?? winnerId} in control.`
       : `${winner?.name ?? winnerId} has prevailed and annexed contested territory.`,
-    [...war.attackerIds, ...war.defenderIds],
-    { category: war.isCivilWar ? 'civil_conflict' : 'war', importance: 'critical', locationEntityId: winnerId },
-  )
+    category: war.isCivilWar ? 'civil_conflict' : 'war',
+    importance: 'critical',
+    locationEntityId: winnerId,
+    consequences: `Reconstruction and reintegration of contested territory are expected to dominate ${winner?.name ?? winnerId}'s agenda in the coming turns.`,
+    status: 'resolved',
+  })
 }
 
 function sumStrength(state: WorldState, ids: string[]): number {

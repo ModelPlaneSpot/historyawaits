@@ -9,6 +9,7 @@ import { CommandConsole } from './CommandConsole'
 import { AiStatusBadge } from './AiStatusBadge'
 import { AdvisorPanel } from './AdvisorPanel'
 import { TurnSummaryModal } from './TurnSummaryModal'
+import { EventDetailPanel } from './EventDetailPanel'
 import { formatGameDate } from '@/simulation/gameDate'
 
 export function GameScreen() {
@@ -76,6 +77,7 @@ export function GameScreen() {
       <AdvisorPanel />
       <NewsFeedPanel />
       <TurnSummaryModal />
+      <EventDetailPanel />
     </div>
   )
 }

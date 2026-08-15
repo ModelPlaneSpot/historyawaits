@@ -33,4 +33,5 @@ export const workerClient = {
   loadState: (state: import('@/domain/schemas').WorldState) => send({ type: 'LOAD_STATE', state }),
   submitAction: (plan: import('@/domain/schemas').StructuredPlan) => send({ type: 'SUBMIT_ACTION', plan }),
   endTurn: () => send({ type: 'END_TURN' }),
+  toggleFollowStory: (storyId: string) => send({ type: 'TOGGLE_FOLLOW_STORY', storyId }),
 }

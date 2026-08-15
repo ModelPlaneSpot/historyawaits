@@ -6,6 +6,7 @@ export function TurnSummaryModal() {
   const summary = useGameStore((s) => s.turnSummary)
   const dismiss = useGameStore((s) => s.dismissTurnSummary)
   const focusOn = useGameStore((s) => s.focusOn)
+  const openStory = useGameStore((s) => s.openStory)
 
   if (!show || !summary) return null
 
@@ -35,17 +36,29 @@ export function TurnSummaryModal() {
             {summary.worldEvents.map((e) => {
               const clickable = !!(e.locationEntityId || e.locationRegionId)
               return (
-                <li
-                  key={e.id}
-                  className={`importance-${e.importance} ${clickable ? 'clickable' : ''}`}
-                  onClick={() => {
-                    if (!clickable) return
-                    focusOn({ entityId: e.locationEntityId, regionId: e.locationRegionId })
-                    dismiss()
-                  }}
-                >
-                  <span className="news-icon">{CATEGORY_ICONS[e.category]}</span>
-                  {e.headline}
+                <li key={e.id} className={`importance-${e.importance}`}>
+                  <span
+                    className={clickable ? 'clickable' : ''}
+                    onClick={() => {
+                      if (!clickable) return
+                      focusOn({ entityId: e.locationEntityId, regionId: e.locationRegionId })
+                      dismiss()
+                    }}
+                  >
+                    <span className="news-icon">{CATEGORY_ICONS[e.category]}</span>
+                    {e.headline}
+                  </span>
+                  {e.storyEventId && (
+                    <button
+                      className="read-full-story-link"
+                      onClick={() => {
+                        openStory(e.storyEventId!)
+                        dismiss()
+                      }}
+                    >
+                      Read full story →
+                    </button>
+                  )}
                 </li>
               )
             })}

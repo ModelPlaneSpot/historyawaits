@@ -35,5 +35,8 @@ export const NewsEvent = z.object({
   /** Where to point the camera if the player clicks this event, if anywhere. */
   locationEntityId: z.string().nullable(),
   locationRegionId: z.string().nullable(),
+  /** The persistent StoryEvent this news item is one stage of, if any --
+   *  lets the player open the full developing narrative behind a headline. */
+  storyEventId: z.string().nullable(),
 })
 export type NewsEvent = z.infer<typeof NewsEvent>

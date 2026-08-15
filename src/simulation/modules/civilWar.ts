@@ -1,7 +1,8 @@
 import type { WorldState, WorldEntity, DisputedEntity } from '@/domain/schemas'
-import { pushNews } from './news'
 import { transferRegion } from './territory'
 import { generateDistinguishableColor } from './colorGen'
+import { createStory } from './story'
+import { buildCivilWarNarrative } from './storyTemplates'
 
 const STABILITY_THRESHOLD = 15
 const MIN_REGIONS_FOR_CIVIL_WAR = 2
@@ -105,6 +106,26 @@ function startCivilWar(state: WorldState, parent: WorldEntity, turn: number, rng
     transferRegion(state, region.id, rebelId)
   }
 
+  parent.government.stability = Math.max(0, parent.government.stability - 10)
+
+  const title = `CIVIL WAR ERUPTS IN ${parent.name.toUpperCase()}`
+  const headline = `Civil War Erupts in ${parent.name}`
+  const body = `Rebel forces have seized control of ${rebelRegions.length} region${rebelRegions.length === 1 ? '' : 's'} in ${parent.name} following a collapse in government stability.`
+  const narrative = buildCivilWarNarrative(parent, rebelEntity as WorldEntity, rebelRegions.length / Math.max(1, regions.length))
+  const storyId = createStory(state, turn, {
+    type: 'civil_war',
+    title,
+    importance: 'critical',
+    category: 'civil_conflict',
+    countryIds: [parent.id, rebelId],
+    regionIds: contestedRegionIds,
+    headline,
+    body,
+    locationRegionId: rebelRegions[0]?.id ?? null,
+    locationEntityId: parent.id,
+    ...narrative,
+  })
+
   const warId = `WAR-CIVIL-${parent.id}-${turn}`
   state.wars[warId] = {
     id: warId,
@@ -118,16 +139,6 @@ function startCivilWar(state: WorldState, parent: WorldEntity, turn: number, rng
     active: true,
     level: 4,
     isCivilWar: true,
+    storyEventId: storyId,
   }
-
-  parent.government.stability = Math.max(0, parent.government.stability - 10)
-
-  pushNews(
-    state,
-    turn,
-    `Civil war erupts in ${parent.name}`,
-    `Rebel forces have seized control of ${rebelRegions.length} region${rebelRegions.length === 1 ? '' : 's'} in ${parent.name} following a collapse in government stability.`,
-    [parent.id, rebelId],
-    { category: 'civil_conflict', importance: 'critical', locationRegionId: rebelRegions[0]?.id ?? null, locationEntityId: parent.id },
-  )
 }

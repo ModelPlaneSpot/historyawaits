@@ -1,8 +1,10 @@
 /// <reference lib="webworker" />
+import { produce } from 'immer'
 import type { WorldState } from '@/domain/schemas'
 import { createNewGame } from '../newGame'
 import { advanceTurn } from '../engine/turnEngine'
 import { validateAndApplyPlan } from '../validators/actionValidator'
+import { toggleFollowStory } from '../modules/story'
 import type { WorkerRequest, WorkerResponse } from './protocol'
 
 let state: WorldState | null = null
@@ -31,6 +33,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       case 'END_TURN': {
         if (!state) throw new Error('No active game')
         state = advanceTurn(state)
+        post({ type: 'STATE', state, requestId: msg.requestId })
+        break
+      }
+      case 'TOGGLE_FOLLOW_STORY': {
+        if (!state) throw new Error('No active game')
+        state = produce(state, (draft) => {
+          toggleFollowStory(draft, msg.storyId)
+        })
         post({ type: 'STATE', state, requestId: msg.requestId })
         break
       }

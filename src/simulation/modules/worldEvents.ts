@@ -1,6 +1,9 @@
 import type { WorldState, WorldEntity } from '@/domain/schemas'
 import { pushNews } from './news'
 import { adjustOpinion, applySanction, getOrCreateRelation } from './diplomacy'
+import { createStory, appendStoryStage, findOpenStory } from './story'
+import { buildEconomicCrisisNarrative, buildDiplomaticCrisisNarrative } from './storyTemplates'
+import { applyDeclareWar } from './war'
 
 /** Emergent, condition-driven world events -- everything here is gated on
  *  actual simulation state (unemployment, stability, opinion, debt, etc.)
@@ -24,7 +27,7 @@ export function generateWorldEvents(state: WorldState, turn: number, rng: () => 
     considerTerroristAttack(state, entity, turn, rng)
   }
 
-  considerBorderTension(state, turn, rng)
+  considerDiplomaticEscalation(state, turn, rng)
   considerAiDiplomacy(state, turn, rng)
 }
 
@@ -56,10 +59,19 @@ export function considerEconomicShift(state: WorldState, entity: WorldEntity, tu
   if (econ.growthRatePct > -1 && rng() < 0.004 + Math.max(0, (econ.debtToGdpPct - 80) * 0.0002)) {
     econ.growthRatePct -= 2 + rng() * 2
     econ.unemploymentRatePct = clamp(econ.unemploymentRatePct + 2, 0, 60)
-    pushNews(state, turn, `${entity.name} enters a recession`, `${entity.name}'s economic output has declined for a second consecutive quarter.`, [entity.id], {
-      category: 'economy',
+    const narrative = buildEconomicCrisisNarrative(entity)
+    const title = `${entity.name.toUpperCase()} ENTERS DEEP RECESSION`
+    createStory(state, turn, {
+      type: 'economic_crisis',
+      title,
       importance: 'major',
+      category: 'economy',
+      countryIds: [entity.id],
+      regionIds: [],
+      headline: `${entity.name} Enters a Recession`,
+      body: `${entity.name}'s economic output has declined for a second consecutive quarter.`,
       locationEntityId: entity.id,
+      ...narrative,
     })
     return
   }
@@ -162,11 +174,17 @@ export function considerTerroristAttack(state: WorldState, entity: WorldEntity, 
   })
 }
 
-/** Pre-war tension between neighboring countries -- approximated via shared
- *  UN subregion, since the simulation doesn't model a precise land-border
- *  graph. Represents escalation levels 1-3 (diplomatic tension/border
- *  incident/skirmish) from the spec, short of an actual declared war. */
-export function considerBorderTension(state: WorldState, turn: number, rng: () => number): void {
+/** A real escalation ladder between neighboring countries -- approximated via
+ *  shared UN subregion, since the simulation doesn't model a precise land-
+ *  border graph. Each hostile pair develops through named stages on a single
+ *  persistent diplomatic_crisis story (tension -> mobilization -> border
+ *  clash), and if it deteriorates far enough, actually escalates into a real
+ *  declared war (applyDeclareWar), at which point the story is upgraded to
+ *  type "war" rather than left behind as an abandoned thread. This is what
+ *  lets something like a Thailand-Cambodia border dispute develop into an
+ *  actual war over many turns, fully visible in the news even if the player
+ *  is on the other side of the world. */
+export function considerDiplomaticEscalation(state: WorldState, turn: number, rng: () => number): void {
   const bySubregion = new Map<string, string[]>()
   for (const e of Object.values(state.entities)) {
     if (e.kind !== 'country') continue
@@ -185,19 +203,48 @@ export function considerBorderTension(state: WorldState, turn: number, rng: () =
         // exist -- diplomacy is sparse by design, but neighboring countries
         // should still be *capable* of border tension from turn one.
         const rel = getOrCreateRelation(a, b.id)
-        if (rel.status === 'war' || rel.status === 'allied' || rel.opinion >= -40) continue
-        if (rng() >= 0.01) continue
+        if (rel.status === 'war' || rel.status === 'allied' || rel.opinion >= -30) continue
+        if (rng() >= 0.012) continue
 
-        const isSkirmish = rel.opinion < -70 && rng() < 0.4
-        adjustOpinion(state, a.id, b.id, -8)
-        pushNews(
-          state,
-          turn,
-          isSkirmish ? `Skirmish between ${a.name} and ${b.name}` : `Border incident between ${a.name} and ${b.name}`,
-          `Tensions have flared between ${a.name} and ${b.name} along their shared border.`,
-          [a.id, b.id],
-          { category: 'military', importance: isSkirmish ? 'major' : 'medium', locationEntityId: a.id },
-        )
+        adjustOpinion(state, a.id, b.id, -6)
+        const existing = findOpenStory(state, 'diplomatic_crisis', [a.id, b.id])
+        const stageCount = existing?.stages.length ?? 0
+
+        if (!existing) {
+          const title = `Tensions Rise Along the ${a.name}-${b.name} Border`
+          createStory(state, turn, {
+            type: 'diplomatic_crisis',
+            title,
+            importance: 'medium',
+            category: 'diplomacy',
+            countryIds: [a.id, b.id],
+            regionIds: [],
+            headline: title,
+            body: `Diplomatic relations between ${a.name} and ${b.name} have deteriorated sharply following a series of border incidents.`,
+            locationEntityId: a.id,
+            ...buildDiplomaticCrisisNarrative(a, b, rel.opinion),
+          })
+        } else if (rel.opinion < -55 && stageCount === 1) {
+          appendStoryStage(state, existing.id, turn, {
+            headline: `${a.name} and ${b.name} Forces Mobilize`,
+            body: `Both ${a.name} and ${b.name} have moved additional forces toward their shared border amid rising tension.`,
+            category: 'military',
+            importance: 'medium',
+            locationEntityId: a.id,
+            situation: `${a.name}-${b.name} relations: ${rel.opinion.toFixed(0)}\nStatus: Military mobilization along the border`,
+          })
+        } else if (rel.opinion < -75 && stageCount === 2) {
+          appendStoryStage(state, existing.id, turn, {
+            headline: `Border Clash Leaves Casualties Near the ${a.name}-${b.name} Frontier`,
+            body: `A clash between ${a.name} and ${b.name} forces along their shared border has resulted in casualties on both sides.`,
+            category: 'military',
+            importance: 'major',
+            locationEntityId: a.id,
+            situation: `${a.name}-${b.name} relations: ${rel.opinion.toFixed(0)}\nStatus: Active border clashes, no formal war declared`,
+          })
+        } else if (rel.opinion <= -85 && stageCount >= 3 && rng() < 0.25) {
+          applyDeclareWar(state, a.id, b.id, turn, existing.id)
+        }
       }
     }
   }

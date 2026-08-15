@@ -49,6 +49,7 @@ interface GameStore {
   focusNonce: number
   cameraAutoFollow: boolean
   newsOpen: boolean
+  storyDetailId: string | null
 
   startNewGame: (playerEntityId: string) => Promise<void>
   continueFromSave: (id: string) => Promise<void>
@@ -68,6 +69,9 @@ interface GameStore {
   setCameraAutoFollow: (v: boolean) => void
   dismissTurnSummary: () => void
   toggleNews: () => void
+  openStory: (id: string) => void
+  closeStory: () => void
+  toggleFollowStory: (id: string) => Promise<void>
 }
 
 let logCounter = 0
@@ -97,6 +101,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   focusNonce: 0,
   cameraAutoFollow: true,
   newsOpen: false,
+  storyDetailId: null,
 
   startNewGame: async (playerEntityId: string) => {
     set({ busy: true })
@@ -250,6 +255,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
   setCameraAutoFollow: (v) => set({ cameraAutoFollow: v }),
   dismissTurnSummary: () => set({ showTurnSummary: false }),
   toggleNews: () => set((s) => ({ newsOpen: !s.newsOpen })),
+
+  openStory: (id) => set({ storyDetailId: id }),
+  closeStory: () => set({ storyDetailId: null }),
+  toggleFollowStory: async (id) => {
+    const res = await workerClient.toggleFollowStory(id)
+    if (res.type === 'STATE') set({ worldState: res.state })
+  },
 }))
 
 localAiEngine.onStatusChange((status) => {

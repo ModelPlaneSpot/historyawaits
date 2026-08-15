@@ -7,6 +7,7 @@ export interface PushNewsOptions {
   importance: NewsImportance
   locationEntityId?: string | null
   locationRegionId?: string | null
+  storyEventId?: string | null
 }
 
 export function pushNews(
@@ -28,6 +29,7 @@ export function pushNews(
     importance: opts.importance,
     locationEntityId: opts.locationEntityId ?? entityIds[0] ?? null,
     locationRegionId: opts.locationRegionId ?? null,
+    storyEventId: opts.storyEventId ?? null,
   })
   // Keep the log bounded -- old news doesn't need to be recomputed or
   // rendered, but the cap is generous so the "permanent world timeline"
