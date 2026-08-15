@@ -53,6 +53,19 @@ npm run gen:data  # rebuilds src/data/generated/*.json
 - `src/persistence/` — Dexie (IndexedDB) save/load/autosave.
 - `scripts/` — one-off data-generation scripts (not part of the shipped app).
 
+### QA scripts
+
+`scripts/smoke-test*.mjs` are Playwright-driven end-to-end checks (menu → new game → map click → region click → commands → end turn → save/load/refresh). Not part of the app bundle. Run against a dev server, a `vite preview` build, or a deployed URL:
+
+```bash
+npx playwright install chromium   # once
+node scripts/smoke-test.mjs [baseUrl]             # core flow (defaults to localhost:5173)
+node scripts/smoke-test-disputed.mjs [baseUrl]    # starting as a disputed entity
+node scripts/smoke-test-commands.mjs [baseUrl]    # command variety (mobilize/treaty/alliance/sanction)
+node scripts/smoke-test-longplay.mjs [baseUrl] 40 # N-turn stability + news generation
+node scripts/smoke-test-ai.mjs [baseUrl]          # local AI enable flow (needs a real GPU to fully succeed)
+```
+
 ## Deployment
 
 Static site, deployable anywhere that serves a `dist/` folder. `render.yaml` configures it for [Render](https://render.com) as a free Static Site (`npm ci && npm run build`, publish `dist`).

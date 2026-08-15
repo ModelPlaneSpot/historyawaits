@@ -34,6 +34,7 @@ await page.waitForSelector('text=Turn 0', { timeout: 20000 })
 await shot('new-game')
 console.log('[ok] New game started as United States')
 
+await page.waitForTimeout(500) // let the map's ResizeObserver settle before measuring it
 const canvas = await page.$('.map-view canvas')
 
 async function clickUntil(candidates, checkFn, label) {
