@@ -16,6 +16,16 @@ import {
   type SaveRecord,
 } from '@/persistence/db'
 
+/** Local AI is the only AI backend the game has (no cloud fallback) -- start
+ *  loading it as soon as a game is entered so it's the default experience,
+ *  not something the player has to discover and opt into. No-op if it's
+ *  already loading/ready, or if the browser doesn't support WebGPU. */
+function startLocalAiIfSupported(): void {
+  if (localAiEngine.getStatus() === 'unloaded' && localAiEngine.supportsWebGpu()) {
+    void localAiEngine.initialize()
+  }
+}
+
 export interface FocusTarget {
   entityId: string | null
   regionId: string | null
@@ -152,6 +162,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         advisorState: emptyAdvisorState(),
         busy: false,
       })
+      startLocalAiIfSupported()
       await saveGame(res.state, 'Autosave', true)
       await saveAdvisorState(AUTOSAVE_ID, emptyAdvisorState())
       await get().refreshSaves()
@@ -180,6 +191,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
         advisorState,
         busy: false,
       })
+      startLocalAiIfSupported()
     } else {
       set({ busy: false })
     }
@@ -298,12 +310,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   toggleAdvisor: () => {
     set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null }))
-    // Opening the advisor is the player's clear signal they want AI features --
-    // start the (one-time, cached) model download automatically so they don't
-    // have to find and click a separate "enable" button first.
-    if (get().advisorOpen && localAiEngine.getStatus() === 'unloaded' && localAiEngine.supportsWebGpu()) {
-      void localAiEngine.initialize()
-    }
+    // Belt-and-suspenders: the model already starts loading as soon as a
+    // game is entered, but this catches it if that somehow hasn't fired yet.
+    if (get().advisorOpen) startLocalAiIfSupported()
   },
 
   askAdvisor: async (text: string) => {
