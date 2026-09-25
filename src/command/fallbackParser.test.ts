@@ -117,11 +117,44 @@ describe('fallbackParser', () => {
 })
 
 describe('actionValidator end-to-end via fallback parser', () => {
-  it('executes the full "annex Gaza and dissolve Hamas" flow and mutates state correctly', async () => {
+  it('explains, rather than pretending not to recognize, a declare-war target that is a non-state organization', async () => {
     const state = createNewGame('ISR')
-    const parsed = await fallbackParser.parse('Annex Gaza and dissolve Hamas', ctx(state, 'ISR'))
+    const parsed = await fallbackParser.parse('declare war on Hamas', ctx(state, 'ISR'))
     expect(parsed.ok).toBe(true)
     const result = validateAndApplyPlan(state, parsed.plan!, 1)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Hamas')
+    expect(result.message.toLowerCase()).toContain('annex')
+  })
+
+  it('explains, rather than pretending not to recognize, declaring war directly on Gaza (an org-controlled region)', async () => {
+    const state = createNewGame('ISR')
+    const parsed = await fallbackParser.parse('declare war on Gaza', ctx(state, 'ISR'))
+    expect(parsed.ok).toBe(true)
+    const result = validateAndApplyPlan(state, parsed.plan!, 1)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Hamas')
+  })
+
+  it('rejects annexing Gaza without a war against its host country (Palestine)', async () => {
+    const state = createNewGame('ISR')
+    const parsed = await fallbackParser.parse('Annex Gaza', ctx(state, 'ISR'))
+    expect(parsed.ok).toBe(true)
+    const result = validateAndApplyPlan(state, parsed.plan!, 1)
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain('Palestine')
+  })
+
+  it('executes the full "declare war, annex Gaza, dissolve Hamas" flow and mutates state correctly', async () => {
+    const state = createNewGame('ISR')
+    const warParsed = await fallbackParser.parse('declare war on Palestine', ctx(state, 'ISR'))
+    expect(warParsed.ok).toBe(true)
+    const afterWar = validateAndApplyPlan(state, warParsed.plan!, 1)
+    expect(afterWar.ok).toBe(true)
+
+    const parsed = await fallbackParser.parse('Annex Gaza and dissolve Hamas', ctx(afterWar.state, 'ISR'))
+    expect(parsed.ok).toBe(true)
+    const result = validateAndApplyPlan(afterWar.state, parsed.plan!, 2)
     expect(result.ok).toBe(true)
     expect(result.state.regions['PSE-GAZA'].controllerId).toBe('ISR')
     expect(result.state.organizations['ORG-HAMAS'].active).toBe(false)

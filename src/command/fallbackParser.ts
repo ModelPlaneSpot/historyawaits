@@ -140,6 +140,17 @@ function resolveEntityLike(text: string, ctx: ParseContext, index: ResolverIndex
   return resolveEntity(text, index)
 }
 
+/** Declare-war target resolution: same as resolveEntityLike, but if no
+ *  country matches, also tries organizations and the regions they control
+ *  (e.g. "Hamas" / "Gaza") so the validator can explain why a state-to-state
+ *  war doesn't apply to a non-state actor -- instead of the resolver
+ *  pretending the name doesn't exist at all when it plainly does. */
+function resolveWarTarget(text: string, ctx: ParseContext, index: ResolverIndex): ResolveResult {
+  const entityResult = resolveEntityLike(text, ctx, index)
+  if (entityResult.id !== null || entityResult.ambiguous) return entityResult
+  return resolveRegionOrOrganizationOrEntity(text, index)
+}
+
 function currentEntity(ctx: ParseContext) {
   return ctx.worldState.entities[ctx.playerEntityId]
 }
@@ -206,7 +217,7 @@ const RULES: Rule[] = [
   {
     pattern: /(?:declare war on|invade|attack|launch\s+(?:the\s+)?invasion of|launch (?:an? )?(?:military )?offensive against|begin military operations against)\s+(.+)/i,
     build: (m, idx, ctx) => {
-      const r = targetOutcome(resolveEntityLike(m[1], ctx, idx))
+      const r = targetOutcome(resolveWarTarget(m[1], ctx, idx))
       if (!r) return null
       if (isClarify(r)) return r
       return ok({ action: 'declare_war', target: r.target }, r.fuzzy)
@@ -216,7 +227,7 @@ const RULES: Rule[] = [
     pattern: /(?:hit|strike)\s+(?:the\s+)?(?:military bases|bases|targets|military installations) of\s+(.+)|(?:hit|strike)\s+(their|its|them)\s+(?:military bases|bases|targets|military installations)/i,
     build: (m, idx, ctx) => {
       const raw = m[1] ?? m[2]
-      const r = targetOutcome(resolveEntityLike(raw, ctx, idx))
+      const r = targetOutcome(resolveWarTarget(raw, ctx, idx))
       if (!r) return null
       if (isClarify(r)) return r
       return ok(

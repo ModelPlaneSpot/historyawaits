@@ -127,7 +127,15 @@ function resolveTarget(step: AiStep, ctx: ParseContext, index: ReturnType<typeof
     return null
   }
   const isTerritorial = step.action === 'annex' || step.action === 'cede_territory' || step.action === 'grant_independence'
-  return isTerritorial ? resolveRegionOrOrganizationOrEntity(step.targetName, index) : resolveEntity(step.targetName, index)
+  if (isTerritorial) return resolveRegionOrOrganizationOrEntity(step.targetName, index)
+
+  const entityResult = resolveEntity(step.targetName, index)
+  if (step.action !== 'declare_war' || entityResult.id !== null || entityResult.ambiguous) return entityResult
+  // No matching country -- but "declare war" deserves a clearer answer than
+  // pretending the name doesn't exist when it's actually a real organization
+  // or the territory one controls (e.g. "Hamas" / "Gaza"); the validator can
+  // explain why a state-to-state war doesn't apply to a non-state actor.
+  return resolveRegionOrOrganizationOrEntity(step.targetName, index)
 }
 
 function groundExtraction(rawJson: string, originalInput: string, ctx: ParseContext): ParseResult {

@@ -469,14 +469,29 @@ function buildResources(rng: () => number) {
 // Regions: derived from the admin-1 topology, with a synthetic whole-country
 // fallback for the handful of entities Natural Earth doesn't subdivide.
 // ---------------------------------------------------------------------------
+// The source map data labels these two provinces' countryIso3 as "MAR", but
+// they ARE Western Sahara (confirmed by name -- "Laâyoune - Boujdour - Sakia
+// El Hamra" and "Oued el Dahab" are Western Sahara's own former regions --
+// and by geometry, entirely within Western Sahara's own admin-0 boundary,
+// well south of Morocco proper). Left uncorrected, Western Sahara's real
+// territory was double-counted: folded into Morocco's own economy/population
+///territoryRegionIds AND separately drawn as a synthetic "whole country"
+// Western Sahara blob on top of the same land, making Western Sahara look
+// like part of Morocco on the map instead of its own disputed entity.
+const MISLABELED_AS_MAR = new Map([
+  ['MAR-3456', 'ESH'],
+  ['MAR-3469', 'ESH'],
+])
+
 function loadAdmin1Index(): Map<string, { id: string; name: string }[]> {
   const raw = JSON.parse(fs.readFileSync(path.join(GEO_DIR, 'world-admin1.topojson'), 'utf-8'))
   const geoms = raw.objects.admin1.geometries as { properties: { id: string; name: string; countryIso3: string } }[]
   const index = new Map<string, { id: string; name: string }[]>()
   for (const g of geoms) {
-    const list = index.get(g.properties.countryIso3) ?? []
+    const countryId = MISLABELED_AS_MAR.get(g.properties.id) ?? g.properties.countryIso3
+    const list = index.get(countryId) ?? []
     list.push({ id: g.properties.id, name: g.properties.name })
-    index.set(g.properties.countryIso3, list)
+    index.set(countryId, list)
   }
   return index
 }
@@ -509,22 +524,35 @@ function buildRegionsForEntity(
   if (capitalIdx === -1) capitalIdx = identity.id === 'PSE' ? featureList.findIndex((f) => f.id === 'PSE-WBK') : 0
   if (capitalIdx === -1) capitalIdx = 0
 
+  // Every region belonging to a disputed entity (Palestine, Taiwan, Kosovo,
+  // Northern Cyprus, Somaliland, Western Sahara) is itself contested by that
+  // entity's claimant(s) -- not just Gaza/West Bank as a Palestine-only
+  // special case, which left every other disputed entity's regions looking
+  // like ordinary, uncontested territory.
+  const isDisputedTerritory = identity.kind === 'disputed_entity'
+
   return featureList.map((f, i) => {
     const isGaza = f.id === 'PSE-GAZA'
     const isWestBank = f.id === 'PSE-WBK'
+    // Gaza and the West Bank are each governed by their own body (Hamas,
+    // the Palestinian Authority) rather than "Palestine" generically -- but
+    // annexing either still requires being at war with the host entity
+    // (PSE) first, same as any other organization-controlled region (see
+    // validateAnnex in the simulation validators).
+    const occupyingOrganizationId = isGaza ? 'ORG-HAMAS' : isWestBank ? 'ORG-PA' : null
     return {
       id: f.id,
       name: f.name,
       countryId: identity.id,
-      controllerId: isGaza ? 'ORG-HAMAS' : identity.id,
+      controllerId: occupyingOrganizationId ?? identity.id,
       populationShare: Math.round((weights[i] / totalWeight) * 10000) / 10000,
       gdpShare: Math.round((weights[i] / totalWeight) * 10000) / 10000,
-      unrest: Math.round(Math.min(100, Math.max(0, baseUnrest + jitter(rng, -10, 10) + (isGaza || isWestBank ? 25 : 0)))),
+      unrest: Math.round(Math.min(100, Math.max(0, baseUnrest + jitter(rng, -10, 10) + (isDisputedTerritory ? 25 : 0)))),
       infrastructureLevel: Math.round(Math.min(100, Math.max(0, baseInfra + jitter(rng, -15, 15)))),
       isCapitalRegion: i === capitalIdx,
-      disputed: isGaza || isWestBank,
-      contestedByIds: isGaza || isWestBank ? ['ISR'] : [],
-      occupyingOrganizationId: isGaza ? 'ORG-HAMAS' : null,
+      disputed: isDisputedTerritory,
+      contestedByIds: isDisputedTerritory ? (identity.claimantIds ?? []) : [],
+      occupyingOrganizationId,
     }
   })
 }

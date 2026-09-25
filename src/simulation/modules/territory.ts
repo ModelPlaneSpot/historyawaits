@@ -12,11 +12,17 @@ export function transferRegion(state: WorldState, regionId: string, newControlle
   if (oldController) {
     oldController.territoryRegionIds = oldController.territoryRegionIds.filter((id) => id !== regionId)
   }
+  // Note: an organization's own controlsRegionIds is deliberately NOT
+  // updated here -- validateDissolve (actionValidator.ts) uses it to check
+  // "do you now hold territory this group used to operate from" as grounds
+  // to dissolve it, which must still work immediately after annexing that
+  // same territory in the same turn/plan.
   const newController = state.entities[newControllerId]
   if (newController && !newController.territoryRegionIds.includes(regionId)) {
     newController.territoryRegionIds.push(regionId)
   }
   region.controllerId = newControllerId
+  region.occupyingOrganizationId = null
   region.disputed = true
 }
 

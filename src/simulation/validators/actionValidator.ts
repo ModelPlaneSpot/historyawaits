@@ -125,7 +125,30 @@ function isAtWar(state: WorldState, a: string, b: string): boolean {
 }
 
 function validateDeclareWar(state: WorldState, actorId: string, targetId: string | null, turn: number): ValidationResult {
-  if (!targetId || !state.entities[targetId]) return { ok: false, message: 'Declare war on whom? I could not identify that country.' }
+  if (!targetId) return { ok: false, message: 'Declare war on whom? I could not identify that country.' }
+  if (!state.entities[targetId]) {
+    const org = state.organizations[targetId]
+    if (org) {
+      const region = state.regions[org.controlsRegionIds[0]]
+      return {
+        ok: false,
+        message: region
+          ? `${org.name} is a non-state organization, not a country -- you can't declare war on it directly. Try "annex ${region.name}" to take the territory it controls by force instead.`
+          : `${org.name} is a non-state organization, not a country -- you can't declare war on it directly.`,
+      }
+    }
+    const region = state.regions[targetId]
+    if (region) {
+      const controllerOrg = state.organizations[region.controllerId]
+      return {
+        ok: false,
+        message: controllerOrg
+          ? `${region.name} is controlled by ${controllerOrg.name}, a non-state organization, not a country -- try "annex ${region.name}" instead of declaring war.`
+          : `${region.name} is a region, not a country -- you can't declare war on a single region. Try annexing it, or declaring war on whichever country controls it.`,
+      }
+    }
+    return { ok: false, message: 'Declare war on whom? I could not identify that country.' }
+  }
   if (targetId === actorId) return { ok: false, message: 'You cannot declare war on yourself.' }
   if (isAtWar(state, actorId, targetId)) return { ok: false, message: 'You are already at war with them.' }
   if (state.entities[actorId].military.personnelActive < 1000) {
@@ -264,10 +287,22 @@ function validateAnnex(state: WorldState, actorId: string, targetId: string | nu
   if (region) {
     if (region.controllerId === actorId) return { ok: false, message: 'You already control that region.' }
     const controllerEntity = state.entities[region.controllerId]
-    const controllerIsOrganization = !controllerEntity
-    const winningWar = controllerEntity ? isAtWar(state, actorId, controllerEntity.id) : false
-    if (!controllerIsOrganization && !winningWar) {
-      return { ok: false, message: `${controllerEntity?.name ?? region.controllerId} controls that region -- you must be at war with them to annex it.` }
+    // A region held by a non-state organization is still, legally, part of
+    // that organization's host country -- taking it by force still requires
+    // being at war with that host, same as annexing any other region (you
+    // can't declare war on the organization itself; see validateDeclareWar).
+    const controllerOrg = state.organizations[region.controllerId]
+    const warTarget = controllerEntity?.id ?? controllerOrg?.hostEntityId
+    const winningWar = warTarget ? isAtWar(state, actorId, warTarget) : false
+    if (warTarget && !winningWar) {
+      const controllerName = controllerEntity?.name ?? controllerOrg?.name ?? region.controllerId
+      const hostName = controllerOrg ? (state.entities[controllerOrg.hostEntityId]?.name ?? controllerOrg.hostEntityId) : null
+      return {
+        ok: false,
+        message: hostName
+          ? `${controllerName} controls that region, as part of ${hostName} -- you must be at war with ${hostName} to annex it.`
+          : `${controllerName} controls that region -- you must be at war with them to annex it.`,
+      }
     }
     const next = produce(state, (draft) => {
       applyAnnex(draft, actorId, targetId, turn)

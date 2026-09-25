@@ -66,4 +66,11 @@ describe('aiParser', () => {
     const result = await aiParser.parse('atack isreal', ctx(state, 'USA'))
     expect(result.plan?.steps[0]).toMatchObject({ action: 'declare_war', target: 'ISR' })
   })
+
+  it('grounds a declare_war target to the organization controlling it when no country matches', async () => {
+    respondWith([mockStep({ action: 'declare_war', negated: false, targetName: 'Hamas', quantity: null, unit: null })])
+    const state = createNewGame('USA')
+    const result = await aiParser.parse('declare war on Hamas', ctx(state, 'USA'))
+    expect(result.plan?.steps[0]).toMatchObject({ action: 'declare_war', target: 'ORG-HAMAS' })
+  })
 })
