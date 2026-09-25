@@ -13,7 +13,6 @@ const SUGGESTED_QUESTIONS = [
 
 const SOURCE_LABELS: Record<AdvisorSource, string> = {
   'local-ai': 'Local AI',
-  'cloud-ai': 'Cloud AI',
   fallback: 'Basic fallback parser',
 }
 

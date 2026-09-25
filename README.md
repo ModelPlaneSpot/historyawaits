@@ -18,7 +18,7 @@ Player command → Local AI (WebGPU, in-browser) → Structured action → Valid
 - **AI Advisor** (`src/ui/AdvisorPanel.tsx`, `src/ai/advisorChat.ts`): a free-form chat with the same local model, for discussing strategy, asking "what if" questions, or getting an explanation of why something happened. It's strictly read-only — it only ever reads a compact summary of world state (`src/ai/advisorContext.ts`) to build its prompt and has no function available to it that touches state; to act on its suggestions, the player still types a normal command. Conversation history is saved per-game and auto-summarized once it gets long, so it never grows unbounded.
   - Context is rebuilt fresh from live state on **every message** (never cached), includes the current in-game calendar date, and is question-aware — it only pulls in the military/economy/diplomacy detail sections (and a named country's data) relevant to what was actually asked, instead of dumping the whole world.
   - Opening the panel auto-starts the (one-time, browser-cached) local model download — there's no separate "enable AI" step to find first. The advisor is usable immediately regardless, via a deterministic no-model fallback (`src/ai/advisorFallback.ts`) that answers a handful of common questions straight from live state.
-  - A status line shows which of three sources is answering: Local AI, Cloud AI (`src/ai/cloudAiProvider.ts` — an inert extensibility point, unconfigured by default; never a required or silent dependency), or Basic fallback parser.
+  - A status line shows which of two sources is answering: Local AI, or Basic fallback parser.
   - The simulation, not the model, is the source of truth for numbers: `src/ai/factCheck.ts` scans the model's reply for the player's own stats and appends a correction if a figure is well outside a reasonable rounding of the live value (e.g. the model repeating a stale number from earlier in the conversation).
 - Everything is client-side: no backend, no database. Saves live in the browser's IndexedDB (via Dexie). This is a static site — Render hosts a few MB of app code; the ~1GB AI model (when enabled) is fetched by the player's own browser from Hugging Face's CDN and cached locally, so hosting cost stays flat regardless of how much the game is played.
 
@@ -76,13 +76,10 @@ node scripts/smoke-test-advisor.mjs [baseUrl]     # AI Advisor panel open/close/
 
 Static site, deployable anywhere that serves a `dist/` folder. `render.yaml` configures it for [Render](https://render.com) as a free Static Site (`npm ci && npm run build`, publish `dist`).
 
-To enable the optional cloud-AI fallback (off by default — see Limitations below), set `VITE_CLOUD_AI_ENDPOINT` and `VITE_CLOUD_AI_KEY` (and optionally `VITE_CLOUD_AI_PROVIDER`) as build-time environment variables against an OpenAI-chat-completions-compatible endpoint.
-
 ## Limitations
 
 - Regions carry population/GDP/unrest/infrastructure stats *derived proportionally* from their country, not independently simulated economies — this is what keeps a world of ~4,400 regions performant. Region panels correctly show real per-region identity (name, current controller, original owner, capital/disputed/frontline status) but explicitly say "Data unavailable" for anything genuinely not tracked (major cities, terrain, roads/rail/ports, region-level troop deployments) rather than inventing it.
 - Non-major-power country data is procedurally estimated, not hand-researched — treat it as gameplay flavor, not a factbook.
 - The fallback parser's command families are the guaranteed contract; the AI is an enhancement layer for everything else, tested against a curated set of phrasings rather than arbitrary English.
 - The simulation does not model true fog-of-war — every number is deterministically known internally. The Advisor *talks* about foreign militaries the way an intelligence briefing would (rounded, "estimated"), but that's a phrasing convention, not a hidden-information mechanic.
-- Cloud AI is an unconfigured extensibility point, not a working default — with no env vars set (the normal case, including this deployment), the advisor's third tier is the deterministic basic fallback, not a cloud call.
 - No cross-device cloud saves — saves are per-browser (IndexedDB).

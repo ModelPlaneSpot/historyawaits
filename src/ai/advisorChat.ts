@@ -3,9 +3,8 @@ import { localAiEngine } from './localAiEngine'
 import { buildAdvisorContext } from './advisorContext'
 import { factCheckReply } from './factCheck'
 import { basicAdvisorReply, NO_CANNED_ANSWER } from './advisorFallback'
-import { getCloudAiConfig, callCloudAi } from './cloudAiProvider'
 
-export type AdvisorSource = 'local-ai' | 'cloud-ai' | 'fallback'
+export type AdvisorSource = 'local-ai' | 'fallback'
 
 export interface AdvisorMessage {
   id: string
@@ -54,7 +53,6 @@ export function emptyAdvisorState(): AdvisorState {
  *  so the player knows what's powering the advisor right now. */
 export function currentAdvisorSource(): AdvisorSource {
   if (localAiEngine.isReady()) return 'local-ai'
-  if (getCloudAiConfig()) return 'cloud-ai'
   return 'fallback'
 }
 
@@ -85,15 +83,10 @@ export async function sendAdvisorMessage(
       { role: 'user', content: userText },
     ]
 
-    if (source === 'local-ai') {
-      const engine = localAiEngine.getEngine()
-      if (!engine) throw new Error('Local AI model is not loaded.')
-      const completion = await engine.chat.completions.create({ messages, temperature: 0.6, max_tokens: 400 })
-      reply = completion.choices[0]?.message?.content?.trim() || "I'm not sure how to answer that -- could you rephrase?"
-    } else {
-      const config = getCloudAiConfig()!
-      reply = (await callCloudAi(config, messages)).trim() || "I'm not sure how to answer that -- could you rephrase?"
-    }
+    const engine = localAiEngine.getEngine()
+    if (!engine) throw new Error('Local AI model is not loaded.')
+    const completion = await engine.chat.completions.create({ messages, temperature: 0.6, max_tokens: 400 })
+    reply = completion.choices[0]?.message?.content?.trim() || "I'm not sure how to answer that -- could you rephrase?"
     // The simulation, never the model, is authoritative for game statistics --
     // catch and correct any figure the model got wrong or repeated from stale context.
     reply = factCheckReply(reply, worldState)
