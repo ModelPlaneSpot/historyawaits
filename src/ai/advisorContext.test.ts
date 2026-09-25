@@ -10,7 +10,7 @@ describe('buildAdvisorContext', () => {
     const context = buildAdvisorContext(state, 'how is my economy?')
     expect(context).toContain('United States')
     expect(context).toContain('GDP')
-    expect(context).toMatch(/\$27\.00T|\$26|\$27|\$28/) // real seeded USA GDP, not a placeholder
+    expect(context).toMatch(/\$30\.7\dT/) // real seeded USA GDP, not a placeholder
   })
 
   it('includes the current in-game date', () => {

@@ -91,19 +91,26 @@ function mapColorFor(name: string, id: string): string {
   return generateFallbackColor(rngFor(id, 'mapColor'))
 }
 
+// Every field is independently optional: a country can have authored
+// population/GDP/debt (from real-world data) while its military and
+// government type are still procedurally generated, or vice versa.
 type SeedOverride = {
-  population: number
-  gdpUsdBillions: number
-  militaryPersonnelActive: number
-  militarySpendingPctOfGdp: number
-  governmentType: GovernmentType
+  population?: number
+  gdpUsdBillions?: number
+  debtUsdBillions?: number
+  militaryPersonnelActive?: number
+  militarySpendingPctOfGdp?: number
+  governmentType?: GovernmentType
 }
 const SEEDS = seedOverrides as Record<string, SeedOverride>
 
 // ---------------------------------------------------------------------------
-// Regional bands used to procedurally estimate the ~140 countries with no
-// hand-authored seed. Deliberately coarse -- these are gameplay numbers, not
-// a factbook, which is why every generated record is tagged dataConfidence.
+// Regional bands used to procedurally estimate population/GDP for the small
+// number of countries with no real-world data (mostly micro-states with no
+// reliable IMF figures), and military size/spending for every country (no
+// authored source for that yet). Deliberately coarse -- these are gameplay
+// numbers, not a factbook, which is why every generated record is tagged
+// dataConfidence.
 // ---------------------------------------------------------------------------
 const REGION_BANDS: Record<
   string,
@@ -313,33 +320,26 @@ function buildEconomyAndMilitary(identity: Identity) {
   const rng = rngFor(identity.id, 'stats')
   const seed = SEEDS[identity.id]
   const band = REGION_BANDS[identity.region] ?? REGION_BANDS.Asia
+  const area = AREA_BY_CCA3[identity.id] ?? 1000
 
-  let population: number
-  let gdpUsd: number
-  let militaryPersonnelActive: number
-  let militarySpendingPctOfGdp: number
-  let governmentType: GovernmentType
-  let dataConfidence: 'authored' | 'estimated'
+  // Population/GDP/debt are authored for ~190 real countries (see
+  // scripts/data/seed-overrides.json); military and government type still
+  // have their own, independent authored-vs-procedural fallback, since we
+  // don't have real-world data for those. A country can be "authored" on one
+  // axis and procedurally estimated on the other.
+  const population = seed?.population ?? Math.max(50000, Math.round(area * jitter(rng, band.density[0], band.density[1])))
+  const gdpUsd = seed?.gdpUsdBillions !== undefined ? seed.gdpUsdBillions * 1e9 : population * jitter(rng, band.gdpPerCapita[0], band.gdpPerCapita[1])
+  const debtToGdpPct = seed?.debtUsdBillions !== undefined ? (seed.debtUsdBillions / (gdpUsd / 1e9)) * 100 : jitter(rng, 20, 110)
+  const dataConfidence: 'authored' | 'estimated' = seed?.population !== undefined && seed?.gdpUsdBillions !== undefined ? 'authored' : 'estimated'
 
-  if (seed) {
-    population = seed.population
-    gdpUsd = seed.gdpUsdBillions * 1e9
-    militaryPersonnelActive = seed.militaryPersonnelActive
-    militarySpendingPctOfGdp = seed.militarySpendingPctOfGdp
-    governmentType = seed.governmentType
-    dataConfidence = 'authored'
-  } else {
-    const area = AREA_BY_CCA3[identity.id] ?? 1000
-    const density = jitter(rng, band.density[0], band.density[1])
-    population = Math.max(50000, Math.round(area * density))
-    const gdpPerCapita = jitter(rng, band.gdpPerCapita[0], band.gdpPerCapita[1])
-    gdpUsd = population * gdpPerCapita
-    governmentType = pick(rng, GOV_TYPE_POOL)
-    const [minRatio, maxRatio] = GOV_MIL_RATIO[governmentType]
-    militaryPersonnelActive = Math.round(population * jitter(rng, minRatio, maxRatio))
-    militarySpendingPctOfGdp = jitter(rng, 1, 3.5)
-    dataConfidence = 'estimated'
-  }
+  const governmentType: GovernmentType = seed?.governmentType ?? pick(rng, GOV_TYPE_POOL)
+  const militaryPersonnelActive =
+    seed?.militaryPersonnelActive ??
+    (() => {
+      const [minRatio, maxRatio] = GOV_MIL_RATIO[governmentType]
+      return Math.round(population * jitter(rng, minRatio, maxRatio))
+    })()
+  const militarySpendingPctOfGdp = seed?.militarySpendingPctOfGdp ?? jitter(rng, 1, 3.5)
 
   const gdpPerCapitaUsd = gdpUsd / population
   const techLevel = Math.min(100, Math.max(5, (gdpPerCapitaUsd / 60000) * 100))
@@ -348,6 +348,7 @@ function buildEconomyAndMilitary(identity: Identity) {
     population,
     gdpUsd,
     gdpPerCapitaUsd,
+    debtToGdpPct,
     militaryPersonnelActive,
     militarySpendingPctOfGdp,
     governmentType,
@@ -399,7 +400,7 @@ function buildEntity(identity: Identity): WorldEntity {
       gdpPerCapitaUsd: Math.round(stats.gdpPerCapitaUsd),
       growthRatePct: Math.round(jitter(rng, -1, 5) * 10) / 10,
       treasuryUsd: Math.round(stats.gdpUsd * jitter(rng, 0.01, 0.05)),
-      debtToGdpPct: Math.round(jitter(rng, 20, 110)),
+      debtToGdpPct: Math.round(stats.debtToGdpPct),
       militarySpendingPctOfGdp: Math.round(stats.militarySpendingPctOfGdp * 10) / 10,
       taxRatePct: Math.round(jitter(rng, 15, 40) * 10) / 10,
       unemploymentRatePct: Math.round(jitter(rng, 3, 16) * 10) / 10,
