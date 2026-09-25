@@ -4,6 +4,7 @@ import { ActionType, TreatyKind, UnitType, StructuredAction, type ParseResult, t
 import type { CommandParser, ParseContext } from './types'
 import { buildResolverIndex, resolveEntity, resolveOrganization, resolveRegionOrOrganizationOrEntity, type ResolveResult } from './entityResolver'
 import { localAiEngine } from '@/ai/localAiEngine'
+import { levenshtein, toleranceFor } from './fuzzyMatch'
 
 /** What we ask the small local model to extract, one entry per intended
  *  action step. Names are free text -- grounding them into real entity/
@@ -32,6 +33,36 @@ type AiExtraction = z.infer<typeof AiExtraction>
 const EXTRACTION_JSON_SCHEMA = JSON.stringify(zodToJsonSchema(AiExtraction, 'AiExtraction'))
 
 const ACTION_LIST = ActionType.options.join(', ')
+
+// The 0.5B extraction model occasionally flips "negated" to true on a plain,
+// affirmative command (e.g. "mobilize 400,000 troops" -> negated). Since
+// executing a command the player actually gave is far worse than the reverse,
+// only trust the model's negation when the input actually contains a
+// negation cue -- otherwise force it back to false.
+const NEGATION_CUE_RE = /\b(don'?t|do\s+not|doesn'?t|never|avoid(?:ing)?|prevent(?:ing)?|stop|stopping|cancel(?:ing|ling)?|won'?t|will\s+not|shouldn'?t|should\s+not|refuse(?:s|ing)?|no\s+longer)\b/i
+
+const NAME_STOPWORDS = new Set(['the', 'of', 'and', 'de', 'republic', 'democratic', 'united', 'kingdom', 'states', 'people'])
+
+function significantWords(s: string): string[] {
+  return s
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .split(/\s+/)
+    .filter((w) => w.length >= 3 && !NAME_STOPWORDS.has(w))
+}
+
+/** Guards against the same small model inventing a country/organization name
+ *  with no relation to what the player actually typed (observed failure
+ *  mode: a plain "mobilize 400,000 troops" hallucinating a target like
+ *  "Iran" that was never mentioned). Requires at least one significant word
+ *  of the name to fuzzy-match a word in the raw input, so legitimate typo
+ *  correction the model is asked to do ("Isreal" -> "Israel") still passes. */
+function mentionedInInput(input: string, name: string): boolean {
+  const nameWords = significantWords(name)
+  if (nameWords.length === 0) return true
+  const inputWords = significantWords(input)
+  return nameWords.some((nw) => inputWords.some((iw) => levenshtein(nw, iw) <= toleranceFor(Math.max(nw.length, iw.length))))
+}
 
 const SYSTEM_PROMPT = `You are a command interpreter for a geopolitical strategy game. The player issues a natural-language command as the leader of one country, possibly written conversationally, with typos, slang, or without using the "expected" keyword. Understand the MEANING and INTENT of the whole message, not just keywords. Convert it into a JSON object matching this schema:
 
@@ -121,12 +152,17 @@ function groundExtraction(rawJson: string, originalInput: string, ctx: ParseCont
   let unknownCount = 0
   let fuzzyCount = 0
   let clarificationQuestion: string | null = null
+  const inputHasNegationCue = NEGATION_CUE_RE.test(originalInput)
 
   for (const step of data.steps) {
     if (step.action === 'unknown') {
       unknownCount += 1
       continue
     }
+
+    if (step.negated && !inputHasNegationCue) step.negated = false
+    if (step.targetName && !mentionedInInput(originalInput, step.targetName)) step.targetName = null
+    if (step.organizationName && !mentionedInInput(originalInput, step.organizationName)) step.organizationName = null
 
     if (step.negated) {
       steps.push(
