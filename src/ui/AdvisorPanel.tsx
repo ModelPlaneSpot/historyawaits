@@ -24,6 +24,7 @@ export function AdvisorPanel() {
   const advisorError = useGameStore((s) => s.advisorError)
   const askAdvisor = useGameStore((s) => s.askAdvisor)
   const aiStatus = useGameStore((s) => s.aiStatus)
+  const aiProgress = useGameStore((s) => s.aiProgress)
 
   const [input, setInput] = useState('')
   const logRef = useRef<HTMLDivElement>(null)
@@ -56,7 +57,13 @@ export function AdvisorPanel() {
         <div className={`advisor-source-row ${source}`}>
           <span className="dot" />
           {SOURCE_LABELS[source]}
-          {aiStatus === 'loading' && <span className="advisor-loading-note"> -- downloading local model (one-time, cached after)…</span>}
+          {aiStatus === 'loading' && (
+            <span className="advisor-loading-note">
+              {' '}
+              -- {aiProgress?.text.toLowerCase().includes('cache') ? 'loading model from cache' : 'downloading local model (one-time, cached after)'}
+              {aiProgress ? ` (${Math.round(aiProgress.progress * 100)}%)` : '…'}
+            </span>
+          )}
           {aiStatus === 'error' && (
             <button className="advisor-retry" onClick={() => localAiEngine.initialize()}>
               Retry

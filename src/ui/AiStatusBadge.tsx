@@ -11,14 +11,20 @@ const LABELS: Record<string, string> = {
 
 export function AiStatusBadge() {
   const aiStatus = useGameStore((s) => s.aiStatus)
+  const aiProgress = useGameStore((s) => s.aiProgress)
   const enableAi = useGameStore((s) => s.enableAi)
 
   const canEnable = aiStatus === 'unloaded' && localAiEngine.supportsWebGpu()
+  const isReadingCache = aiProgress?.text.toLowerCase().includes('cache')
 
   return (
     <div className={`ai-status ${aiStatus}`}>
       <span className="dot" />
-      <span>{LABELS[aiStatus] ?? aiStatus}</span>
+      <span>
+        {aiStatus === 'loading' && aiProgress
+          ? `Local AI: ${isReadingCache ? 'loading from cache' : 'downloading'} (${Math.round(aiProgress.progress * 100)}%)`
+          : (LABELS[aiStatus] ?? aiStatus)}
+      </span>
       {canEnable && (
         <button onClick={() => enableAi()} style={{ marginLeft: '0.4rem' }}>
           Enable (~1GB download)

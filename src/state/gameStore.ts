@@ -4,6 +4,7 @@ import { workerClient } from './workerClient'
 import { interpretCommand } from '@/command/commandOrchestrator'
 import { confidenceTier } from '@/command/types'
 import { localAiEngine, type AiEngineStatus } from '@/ai/localAiEngine'
+import type { InitProgressReport } from '@mlc-ai/web-llm'
 import { sendAdvisorMessage, emptyAdvisorState, type AdvisorState } from '@/ai/advisorChat'
 import { buildTurnSummary, type TurnSummary } from './turnSummary'
 import {
@@ -68,6 +69,7 @@ interface GameStore {
   selectedRegionId: string | null
   log: LogEntry[]
   aiStatus: AiEngineStatus
+  aiProgress: InitProgressReport | null
   saves: SaveRecord[]
   busy: boolean
   advisorState: AdvisorState
@@ -129,6 +131,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   selectedRegionId: null,
   log: [],
   aiStatus: localAiEngine.getStatus(),
+  aiProgress: localAiEngine.getProgress(),
   saves: [],
   busy: false,
   advisorState: emptyAdvisorState(),
@@ -343,8 +346,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 }))
 
-localAiEngine.onStatusChange((status) => {
-  useGameStore.setState({ aiStatus: status })
+localAiEngine.onStatusChange((status, report) => {
+  useGameStore.setState({ aiStatus: status, aiProgress: report ?? null })
 })
 
 export function isAutosave(save: SaveRecord): boolean {
