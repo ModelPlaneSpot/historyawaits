@@ -32,7 +32,7 @@ export function advanceTurn(state: WorldState, rng: () => number = Math.random):
     for (const entity of Object.values(draft.entities)) {
       advanceEconomy(entity)
       advanceMilitary(entity, atWarIds.has(entity.id))
-      advanceDiplomacy(entity)
+      advanceDiplomacy(draft, entity)
       advanceGovernment(draft, entity, nextTurn, rng)
       considerCivilWar(draft, entity, nextTurn, rng)
     }

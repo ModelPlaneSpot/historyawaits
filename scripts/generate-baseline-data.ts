@@ -13,6 +13,7 @@ import {
   type Country as CountryT,
   type DisputedEntity as DisputedEntityT,
 } from '../src/domain/schemas'
+import { HISTORICAL_RIVALRIES } from '../src/domain/geopolitics'
 
 const OUT_DIR = path.resolve(import.meta.dirname, '..', 'src', 'data', 'generated')
 const GEO_DIR = path.resolve(import.meta.dirname, '..', 'public', 'geo')
@@ -540,20 +541,12 @@ const ALLIANCE_SEEDS: { id: string; type: Treaty['type']; memberIds: string[] }[
   },
 ]
 
-// A handful of real-world rivalries seeded as hostile relations so the world
-// isn't diplomatically inert on turn 0 -- gives the AI-nation heuristics
+// The seeded rivalries live in src/domain/geopolitics.ts (shared with the
+// runtime simulation, which treats them as a natural equilibrium relations
+// drift back toward -- see naturalEquilibrium/advanceDiplomacy) so the world
+// isn't diplomatically inert on turn 0 and gives the AI-nation heuristics
 // (see aiDecisions.ts) something to react to even before the player acts.
-const RIVALRY_SEEDS: [string, string][] = [
-  ['PRK', 'KOR'],
-  ['IND', 'PAK'],
-  ['ISR', 'IRN'],
-  ['RUS', 'UKR'],
-  ['ARE', 'IRN'],
-  ['SAU', 'IRN'],
-  ['MAR', 'ESH'],
-  ['CHN', 'TWN'],
-  ['SOM', 'SOL'],
-]
+const RIVALRY_SEEDS = HISTORICAL_RIVALRIES
 
 function main() {
   const admin1Index = loadAdmin1Index()

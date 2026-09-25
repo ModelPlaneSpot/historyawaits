@@ -1,4 +1,5 @@
 import type { WorldState, WorldEntity, RelationStatus, TreatyKind } from '@/domain/schemas'
+import { naturalEquilibrium } from '@/domain/geopolitics'
 
 export function getOrCreateRelation(entity: WorldEntity, otherId: string) {
   let rel = entity.relations.find((r) => r.otherEntityId === otherId)
@@ -9,13 +10,27 @@ export function getOrCreateRelation(entity: WorldEntity, otherId: string) {
   return rel
 }
 
-/** Relations drift slowly back toward neutral opinion each turn (event-driven
- *  changes -- war entry, treaties -- happen instantly via the apply* functions
- *  below, not through this drift). */
-export function advanceDiplomacy(entity: WorldEntity): void {
+/** Relations drift slowly each turn toward a natural equilibrium -- not
+ *  always neutral -- so historical rivals stay tense and ideologically
+ *  aligned/opposed governments settle into loose blocs on their own, without
+ *  the player or any AI decision needing to do anything. Event-driven changes
+ *  (war entry, treaties, explicit diplomacy actions) still happen instantly
+ *  via the apply* functions below; this only governs passive drift, and
+ *  passive drift can also nudge status across the same thresholds
+ *  applyImproveRelations uses, so a bloc can cool into (or freeze out of)
+ *  friendliness/hostility purely from ideology and history. */
+export function advanceDiplomacy(state: WorldState, entity: WorldEntity): void {
   for (const rel of entity.relations) {
     if (rel.status === 'war') continue
-    rel.opinion += (0 - rel.opinion) * 0.01
+    const other = state.entities[rel.otherEntityId]
+    const equilibrium = other ? naturalEquilibrium(entity.id, entity.government.type, other.id, other.government.type) : 0
+    rel.opinion += (equilibrium - rel.opinion) * 0.01
+
+    if (rel.status === 'allied') continue
+    if (rel.status === 'hostile' && rel.opinion > -20) rel.status = 'neutral'
+    else if (rel.status === 'neutral' && rel.opinion > 40) rel.status = 'friendly'
+    else if (rel.status === 'friendly' && rel.opinion < 15) rel.status = 'neutral'
+    else if (rel.status !== 'friendly' && rel.opinion < -50) rel.status = 'hostile'
   }
 }
 
