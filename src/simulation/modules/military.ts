@@ -1,7 +1,7 @@
 import type { WorldEntity, UnitType } from '@/domain/schemas'
-import { WEEK_FRACTION } from '../gameDate'
+import { WEEK_FRACTION, TICKS_PER_YEAR } from '../gameDate'
 
-const UNIT_COST_USD: Record<UnitType, number> = {
+export const UNIT_COST_USD: Record<UnitType, number> = {
   troops: 40000,
   tanks: 6000000,
   aircraft: 90000000,
@@ -9,8 +9,34 @@ const UNIT_COST_USD: Record<UnitType, number> = {
   artillery: 1500000,
 }
 
-export function advanceMilitary(entity: WorldEntity, atWar: boolean): void {
+/** Equipment upkeep: a country can keep up hardware worth about this many
+ *  years of its military budget; anything beyond that wears out at
+ *  WEAR_PER_YEAR. So arms purchases raise strength, but in the long run
+ *  strength follows the military budget rather than piling up forever. */
+const MAINTAINABLE_BUDGET_YEARS = 6
+const WEAR_PER_YEAR = 0.05
+/** Share of the annual military budget that routinely goes to new
+ *  equipment (the rest is pay, operations, upkeep). Already inside the
+ *  military budget, so it costs the treasury nothing extra. */
+const PROCUREMENT_SHARE = 0.2
+const UNITS = ['tanks', 'aircraft', 'ships', 'artillery'] as const
+/** Value mix for a country that has no equipment to copy the mix from. */
+const DEFAULT_MIX: Record<(typeof UNITS)[number], number> = { tanks: 0.25, aircraft: 0.4, ships: 0.3, artillery: 0.05 }
+
+export function equipmentValueUsd(entity: WorldEntity): number {
+  const eq = entity.military.equipment
+  return eq.tanks * UNIT_COST_USD.tanks + eq.aircraft * UNIT_COST_USD.aircraft + eq.ships * UNIT_COST_USD.ships + eq.artillery * UNIT_COST_USD.artillery
+}
+
+export function maintainableEquipmentUsd(entity: WorldEntity): number {
+  return (entity.economy.gdpUsd * entity.economy.militarySpendingPctOfGdp) / 100 * MAINTAINABLE_BUDGET_YEARS
+}
+
+export function advanceMilitary(entity: WorldEntity, atWar: boolean, turn: number): void {
   const mil = entity.military
+  // Wear and procurement are applied once a year: per-tick fractions would
+  // round away on whole-unit counts.
+  if (turn % Math.round(TICKS_PER_YEAR) === 0) annualEquipmentCycle(entity)
   // Personnel drifts toward a target implied by mobilization level.
   const targetActive = Math.round(
     entity.population.total * 0.003 * (1 + mil.mobilizationLevel / 100),
@@ -21,6 +47,23 @@ export function advanceMilitary(entity: WorldEntity, atWar: boolean): void {
   mil.morale = clamp(mil.morale + (moraleTarget - mil.morale) * 0.03 * WEEK_FRACTION, 0, 100)
 
   if (!atWar) mil.mobilizationLevel = Math.max(10, mil.mobilizationLevel - WEEK_FRACTION)
+}
+
+function annualEquipmentCycle(entity: WorldEntity): void {
+  const eq = entity.military.equipment
+  const value = equipmentValueUsd(entity)
+  const cap = maintainableEquipmentUsd(entity)
+  if (value > cap) {
+    for (const unit of UNITS) eq[unit] = Math.floor(eq[unit] * (1 - WEAR_PER_YEAR))
+    return
+  }
+  const budget = (entity.economy.gdpUsd * entity.economy.militarySpendingPctOfGdp) / 100
+  const spend = Math.min(budget * PROCUREMENT_SHARE, cap - value)
+  if (spend <= 0) return
+  for (const unit of UNITS) {
+    const share = value > 0 ? (eq[unit] * UNIT_COST_USD[unit]) / value : DEFAULT_MIX[unit]
+    eq[unit] += Math.floor((spend * share) / UNIT_COST_USD[unit])
+  }
 }
 
 export function applyMobilize(entity: WorldEntity, additionalTroops: number): void {

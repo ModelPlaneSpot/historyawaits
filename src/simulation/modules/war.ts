@@ -7,6 +7,8 @@ import { createStory, appendStoryStage } from './story'
 import { buildWarNarrative } from './storyTemplates'
 import { WEEK_FRACTION } from '../gameDate'
 
+export const DEFENDER_ADVANTAGE = 1.5
+
 /** Declares war and links it to a persistent story -- either upgrading an
  *  already-developing story (e.g. a diplomatic_crisis that escalated all the
  *  way to war) if `existingStoryId` is given, or starting a fresh one. */
@@ -131,10 +133,12 @@ export function applyProposePeace(state: WorldState, actorId: string, targetId: 
  *  the frontline by (at most) one region, pull in allies, and auto-resolve
  *  wars that reach a decisive outcome. */
 export function advanceWars(state: WorldState, turn: number, rng: () => number): void {
+  let partners: Map<string, Set<string>> | null = null
   for (const war of Object.values(state.wars)) {
     if (!war.active) continue
     const attackerStrength = sumStrength(state, war.attackerIds)
-    const defenderStrength = sumStrength(state, war.defenderIds)
+    // Defenders fight from prepared positions on home ground.
+    const defenderStrength = sumStrength(state, war.defenderIds) * DEFENDER_ADVANTAGE
     const total = attackerStrength + defenderStrength
     if (total <= 0) continue
     const balance = (attackerStrength - defenderStrength) / total // -1..1
@@ -143,7 +147,8 @@ export function advanceWars(state: WorldState, turn: number, rng: () => number):
     for (const a of war.attackerIds) for (const d of war.defenderIds) adjustOpinion(state, a, d, -1)
 
     advanceFrontline(state, war, balance, turn, rng)
-    considerAllyDrawIn(state, war, turn, rng)
+    partners ??= buildAlliancePartners(state)
+    considerAllyDrawIn(state, war, partners, turn, rng)
     updateWarLevel(war)
 
     if (attackerControlsAllContested(state, war) || war.warScore >= 90) {
@@ -196,12 +201,33 @@ function advanceFrontline(state: WorldState, war: War, balance: number, turn: nu
 /** Countries allied with a side already in the war have a small per-turn
  *  chance of being drawn in alongside their ally -- this is what escalates a
  *  bilateral war into a regional/international one (see War.level). */
-function considerAllyDrawIn(state: WorldState, war: War, turn: number, rng: () => number): void {
-  const inWar = new Set([...war.attackerIds, ...war.defenderIds])
+/** entity id -> ids it shares an active alliance treaty with. Built once
+ *  per tick so ally checks don't rescan every treaty for every war. */
+function buildAlliancePartners(state: WorldState): Map<string, Set<string>> {
+  const partners = new Map<string, Set<string>>()
   for (const entity of Object.values(state.entities)) {
-    if (inWar.has(entity.id) || entity.allianceIds.length === 0) continue
-    const alliedWithAttacker = entity.allianceIds.some((tid) => state.treaties[tid]?.active && state.treaties[tid].memberIds.some((m) => war.attackerIds.includes(m)))
-    const alliedWithDefender = entity.allianceIds.some((tid) => state.treaties[tid]?.active && state.treaties[tid].memberIds.some((m) => war.defenderIds.includes(m)))
+    for (const tid of entity.allianceIds) {
+      const treaty = state.treaties[tid]
+      if (!treaty?.active) continue
+      for (const m of treaty.memberIds) {
+        if (m === entity.id) continue
+        let set = partners.get(entity.id)
+        if (!set) partners.set(entity.id, (set = new Set()))
+        set.add(m)
+      }
+    }
+  }
+  return partners
+}
+
+function considerAllyDrawIn(state: WorldState, war: War, partners: Map<string, Set<string>>, turn: number, rng: () => number): void {
+  const inWar = new Set([...war.attackerIds, ...war.defenderIds])
+  for (const [entityId, allies] of partners) {
+    if (inWar.has(entityId)) continue
+    const entity = state.entities[entityId]
+    if (!entity) continue
+    const alliedWithAttacker = war.attackerIds.some((m) => allies.has(m))
+    const alliedWithDefender = war.defenderIds.some((m) => allies.has(m))
     if (alliedWithAttacker === alliedWithDefender) continue
     if (rng() >= 0.04 * WEEK_FRACTION) continue
 

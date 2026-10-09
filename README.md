@@ -11,6 +11,18 @@ Covers ~195 sovereign countries plus a curated set of disputed/non-UN territorie
 - The world starts mid-history (`src/simulation/openingScenario.ts`): the Russia–Ukraine war is underway (Luhansk occupied; Donetsk, Zaporizhzhia, Kherson and Kharkiv contested) and Thailand–Cambodia border tension is simmering. Both run through the normal AI simulation from there.
 - **Victory** (`src/simulation/victory.ts`): on January 1, 2126 countries are ranked in three categories: **Largest Country** (land area controlled, from `regionAreas.json`), **Strongest Economy** (GDP ÷ (1 + debt-to-GDP), so debt counts against you), and **Strongest Military**. The country that leads the most categories wins (ties go to the best combined rank). The **Standings** button shows the live race at any time.
 
+## IGPT -- the internal decision engine
+
+Every country that isn't the player's is run by **IGPT** (`src/igpt/`), and IGPT can also advise the player or run their country on autopilot. It is a scoring engine, not a language model: it runs inside the simulation worker with no model download, no network calls and no tokens, and decides for ~200 countries in a few milliseconds per tick.
+
+- **Doctrines** (`doctrines.ts`) -- hand-written personalities (aggression, expansionism, economic/military focus, diplomacy, sanctions use, risk tolerance, plus claims, countries it protects, and rivals) for ~50 key countries, with government-type defaults for the rest. E.g. Switzerland is neutral, Russia claims Ukraine, the US protects Taiwan.
+- **Lessons** (`lessons.ts`) -- plain-English rules of thumb ("Never start a war you can't win", "Don't attack a country a great power has promised to defend", "Debt above 100% of GDP calls for discipline") that push specific moves up or down. Each lesson that influenced a decision is shown to the player as part of its explanation. Adding a lesson changes every country's behavior.
+- **Brain** (`brain.ts`) -- each country lists its options (war, peace, sanctions, alliances, trade deals, aid, relations, tax/military spending, research, arms, mobilization), scores them from its doctrine and situation (threat level, war odds including allies and protectors, debt, unrest, victory-race ranks), applies lessons and learned experience, and acts on its best foreign and best domestic move if they clear a threshold. Countries at war think every 6 days, others every 30.
+- **Learning** (`memory.ts`) -- every decision is judged ~3 months later by how the country's standing in the three victory races changed relative to the world; moves that paid off are favored, ones that backfired avoided, per country and world-wide. This memory is saved with the game.
+- **In the UI** -- the **IGPT** button shows ranked suggestions with reasons and a one-click "Do it" (executed through the same action validator as typed commands), a feed of what every country decided and why, what IGPT has learned, and an **autopilot** toggle. Autopilot decisions are listed in the turn summary.
+
+`npx tsx scripts/igpt-report.ts [years]` plays N years headless and prints what IGPT decided.
+
 ## Architecture
 
 ```
@@ -59,6 +71,7 @@ npm run gen:areas # rebuilds src/data/generated/regionAreas.json (region land ar
 ### Project layout
 
 - `src/domain/schemas/` — zod schemas, the single source of truth for game data shapes (also used to constrain the AI's JSON output).
+- `src/igpt/` — IGPT, the decision engine for AI countries and player advice/autopilot (see above).
 - `src/simulation/` — the deterministic engine: per-domain modules (`economy.ts`, `military.ts`, `diplomacy.ts`, `war.ts`, `territory.ts`, `government.ts`), the turn loop, the action validator, and the Web Worker that owns live game state.
 - `src/command/` — the fallback parser, the AI parser, and the orchestrator that picks between them.
 - `src/ui/` — React components (map, panels, command console).
@@ -78,6 +91,7 @@ node scripts/smoke-test-commands.mjs [baseUrl]    # command variety (mobilize/tr
 node scripts/smoke-test-longplay.mjs [baseUrl] 40 # N-turn stability + news generation
 node scripts/smoke-test-ai.mjs [baseUrl]          # local AI enable flow (needs a real GPU to fully succeed)
 node scripts/smoke-test-advisor.mjs [baseUrl]     # AI Advisor panel open/close/enable-prompt flow
+node scripts/smoke-test-igpt.mjs [baseUrl]        # IGPT advice, executing a suggestion, world feed, autopilot
 ```
 
 ## Deployment

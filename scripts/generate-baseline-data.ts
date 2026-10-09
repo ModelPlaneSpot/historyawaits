@@ -573,7 +573,7 @@ const ALLIANCE_SEEDS: { id: string; type: Treaty['type']; memberIds: string[] }[
 // runtime simulation, which treats them as a natural equilibrium relations
 // drift back toward -- see naturalEquilibrium/advanceDiplomacy) so the world
 // isn't diplomatically inert on turn 0 and gives the AI-nation heuristics
-// (see aiDecisions.ts) something to react to even before the player acts.
+// (see src/igpt/) something to react to even before the player acts.
 const RIVALRY_SEEDS = HISTORICAL_RIVALRIES
 
 function main() {

@@ -1,6 +1,6 @@
 import type { WorldState, WorldEntity } from '@/domain/schemas'
 import { pushNews } from './news'
-import { adjustOpinion, applySanction, getOrCreateRelation } from './diplomacy'
+import { adjustOpinion, getOrCreateRelation } from './diplomacy'
 import { createStory, appendStoryStage, findOpenStory } from './story'
 import { buildEconomicCrisisNarrative, buildDiplomaticCrisisNarrative } from './storyTemplates'
 import { applyDeclareWar } from './war'
@@ -28,7 +28,6 @@ export function generateWorldEvents(state: WorldState, turn: number, rng: () => 
   }
 
   considerDiplomaticEscalation(state, turn, rng)
-  considerAiDiplomacy(state, turn, rng)
 }
 
 function clamp(v: number, min: number, max: number): number {
@@ -199,11 +198,12 @@ export function considerDiplomaticEscalation(state: WorldState, turn: number, rn
         const a = state.entities[ids[i]]
         const b = state.entities[ids[j]]
         if (!a || !b) continue
-        // Lazily seed the relation rather than requiring one to already
-        // exist -- diplomacy is sparse by design, but neighboring countries
-        // should still be *capable* of border tension from turn one.
-        const rel = getOrCreateRelation(a, b.id)
-        if (rel.status === 'war' || rel.status === 'allied' || rel.opinion >= -30) continue
+        // Only pairs that already have a soured relation can escalate -- a
+        // missing relation is neutral (opinion 0), so creating one here would
+        // never pass the threshold and only bloat state. Border incidents
+        // (forceBorderIncident) and rivalries are what seed these.
+        const rel = a.relations.find((r) => r.otherEntityId === b.id)
+        if (!rel || rel.status === 'war' || rel.status === 'allied' || rel.opinion >= -30) continue
         if (rng() >= 0.012) continue
 
         adjustOpinion(state, a.id, b.id, -6)
@@ -246,38 +246,6 @@ export function considerDiplomaticEscalation(state: WorldState, turn: number, rn
           applyDeclareWar(state, a.id, b.id, turn, existing.id)
         }
       }
-    }
-  }
-}
-
-/** AI-vs-AI diplomacy that doesn't require the player's involvement at all --
- *  sanctions and summits happen between other countries whether or not the
- *  player is watching. */
-export function considerAiDiplomacy(state: WorldState, turn: number, rng: () => number): void {
-  const ids = Object.keys(state.entities)
-  const sampleSize = 6
-  for (let i = 0; i < sampleSize; i++) {
-    const a = state.entities[ids[Math.floor(rng() * ids.length)]]
-    const b = state.entities[ids[Math.floor(rng() * ids.length)]]
-    if (!a || !b || a.id === b.id) continue
-    // Same rationale as border tension: seed the relation on demand instead
-    // of only acting on pairs that already happen to have one.
-    const rel = getOrCreateRelation(a, b.id)
-
-    if (rel.status === 'hostile' && rel.opinion < -60 && rng() < 0.05) {
-      applySanction(state, a.id, b.id)
-      pushNews(state, turn, `${a.name} sanctions ${b.name}`, `${a.name} has imposed economic sanctions on ${b.name} over deteriorating relations.`, [a.id, b.id], {
-        category: 'diplomacy',
-        importance: 'medium',
-        locationEntityId: a.id,
-      })
-    } else if (rel.status === 'friendly' && rel.opinion > 60 && rng() < 0.03) {
-      adjustOpinion(state, a.id, b.id, 5)
-      pushNews(state, turn, `${a.name} and ${b.name} hold a diplomatic summit`, `Leaders of ${a.name} and ${b.name} met to strengthen bilateral ties.`, [a.id, b.id], {
-        category: 'diplomacy',
-        importance: 'minor',
-        locationEntityId: a.id,
-      })
     }
   }
 }

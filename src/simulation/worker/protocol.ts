@@ -7,6 +7,7 @@ export type WorkerRequest =
   /** Advances the world by `days` (rounded to whole 3-day ticks). */
   | { type: 'END_TURN'; days: number; requestId: string }
   | { type: 'TOGGLE_FOLLOW_STORY'; storyId: string; requestId: string }
+  | { type: 'SET_IGPT_AUTOPILOT'; enabled: boolean; requestId: string }
 
 export type WorkerResponse =
   | { type: 'STATE'; state: WorldState; requestId: string }

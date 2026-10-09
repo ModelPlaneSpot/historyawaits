@@ -21,11 +21,15 @@ export function getOrCreateRelation(entity: WorldEntity, otherId: string) {
  *  applyImproveRelations uses, so a bloc can cool into (or freeze out of)
  *  friendliness/hostility purely from ideology and history. */
 export function advanceDiplomacy(state: WorldState, entity: WorldEntity): void {
+  let prunable = false
   for (const rel of entity.relations) {
     if (rel.status === 'war') continue
     const other = state.entities[rel.otherEntityId]
     const equilibrium = other ? naturalEquilibrium(entity.id, entity.government.type, other.id, other.government.type) : 0
-    rel.opinion += (equilibrium - rel.opinion) * 0.01 * WEEK_FRACTION
+    const drift = (equilibrium - rel.opinion) * 0.01 * WEEK_FRACTION
+    // Skip negligible writes: every write makes immer copy the relation.
+    if (Math.abs(drift) > 0.001) rel.opinion += drift
+    if (isForgettable(rel, other, equilibrium)) prunable = true
 
     if (rel.status === 'allied') continue
     if (rel.status === 'hostile' && rel.opinion > -20) rel.status = 'neutral'
@@ -33,6 +37,22 @@ export function advanceDiplomacy(state: WorldState, entity: WorldEntity): void {
     else if (rel.status === 'friendly' && rel.opinion < 15) rel.status = 'neutral'
     else if (rel.status !== 'friendly' && rel.opinion < -50) rel.status = 'hostile'
   }
+
+  // A relation that has drifted back to plain neutral (or whose other side
+  // no longer exists) carries no information a fresh one wouldn't, so drop
+  // it -- otherwise relations accumulate over a century and every tick slows.
+  if (prunable) {
+    entity.relations = entity.relations.filter((rel) => {
+      const other = state.entities[rel.otherEntityId]
+      const equilibrium = other ? naturalEquilibrium(entity.id, entity.government.type, other.id, other.government.type) : 0
+      return !isForgettable(rel, other, equilibrium)
+    })
+  }
+}
+
+function isForgettable(rel: WorldEntity['relations'][number], other: WorldEntity | undefined, equilibrium: number): boolean {
+  if (!other || other.territoryRegionIds.length === 0) return rel.status !== 'war'
+  return rel.status === 'neutral' && rel.treatyIds.length === 0 && equilibrium === 0 && Math.abs(rel.opinion) < 2
 }
 
 export function setRelationStatus(state: WorldState, aId: string, bId: string, status: RelationStatus): void {
@@ -106,12 +126,23 @@ export function applySignTreaty(
   return id
 }
 
+export function sanctionId(actorId: string, targetId: string): string {
+  return `SANC-${actorId}-${targetId}`
+}
+
+export function isSanctioning(state: WorldState, actorId: string, targetId: string): boolean {
+  return !!state.sanctions[sanctionId(actorId, targetId)]
+}
+
 export function applySanction(state: WorldState, actorId: string, targetId: string): void {
+  const id = sanctionId(actorId, targetId)
+  state.sanctions[id] ??= { id, actorId, targetId, startTurn: state.turn }
   setRelationStatus(state, actorId, targetId, 'hostile')
   adjustOpinion(state, actorId, targetId, -20)
 }
 
 export function applyLiftSanction(state: WorldState, actorId: string, targetId: string): void {
+  delete state.sanctions[sanctionId(actorId, targetId)]
   setRelationStatus(state, actorId, targetId, 'neutral')
 }
 

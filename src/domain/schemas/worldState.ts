@@ -6,6 +6,7 @@ import { War } from './war'
 import { Treaty } from './diplomacy'
 import { NewsEvent } from './news'
 import { StoryEvent } from './story'
+import { IgptState, Sanction } from './igpt'
 
 export const SAVE_FORMAT_VERSION = 1
 
@@ -20,5 +21,7 @@ export const WorldState = z.object({
   treaties: z.record(z.string(), Treaty),
   news: z.array(NewsEvent),
   storyEvents: z.record(z.string(), StoryEvent),
+  sanctions: z.record(z.string(), Sanction),
+  igpt: IgptState,
 })
 export type WorldState = z.infer<typeof WorldState>

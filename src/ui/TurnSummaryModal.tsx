@@ -32,6 +32,17 @@ export function TurnSummaryModal() {
           </ul>
         </section>
 
+        {summary.autopilotDecisions.length > 0 && (
+          <section className="turn-summary-section turn-summary-fixed">
+            <h4>IGPT Autopilot Decided</h4>
+            <ul className="turn-summary-list">
+              {summary.autopilotDecisions.slice(-8).map((line, i) => (
+                <li key={i}>{line}</li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <section className="turn-summary-section">
           <h4>World Events ({summary.worldEvents.length})</h4>
           {summary.worldEvents.length === 0 && <div className="turn-summary-empty">A quiet turn around the world.</div>}

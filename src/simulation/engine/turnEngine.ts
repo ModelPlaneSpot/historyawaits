@@ -1,11 +1,11 @@
 import { produce } from 'immer'
 import type { WorldState } from '@/domain/schemas'
-import { advanceEconomy } from '../modules/economy'
+import { advanceEconomy, applySanctionsAndTrade } from '../modules/economy'
 import { advanceMilitary } from '../modules/military'
 import { advanceDiplomacy } from '../modules/diplomacy'
 import { advanceGovernment } from '../modules/government'
 import { advanceWars } from '../modules/war'
-import { runAiDecisions } from '../modules/aiDecisions'
+import { runIgpt } from '@/igpt/igpt'
 import { considerCivilWar } from '../modules/civilWar'
 import { generateWorldEvents, forceWorldEvent } from '../modules/worldEvents'
 import { FINAL_TICK } from '../gameDate'
@@ -30,16 +30,21 @@ export function advanceTurn(state: WorldState, rng: () => number = Math.random):
         .flatMap((w) => [...w.attackerIds, ...w.defenderIds]),
     )
 
+    applySanctionsAndTrade(draft)
     for (const entity of Object.values(draft.entities)) {
+      // A country with no territory left (a defeated rebel state, an annexed
+      // nation) has nothing to govern; keep it for history, skip simulating.
+      if (entity.territoryRegionIds.length === 0 && !entity.isPlayerControlled) continue
       advanceEconomy(entity)
-      advanceMilitary(entity, atWarIds.has(entity.id))
+      advanceMilitary(entity, atWarIds.has(entity.id), nextTurn)
       advanceDiplomacy(draft, entity)
       advanceGovernment(draft, entity, nextTurn, rng)
       considerCivilWar(draft, entity, nextTurn, rng)
     }
 
     advanceWars(draft, nextTurn, rng)
-    runAiDecisions(draft, nextTurn, rng)
+    // IGPT: every AI country (and the player's, on autopilot) decides.
+    runIgpt(draft, nextTurn, rng)
     generateWorldEvents(draft, nextTurn, rng)
 
     // Every tick is an event round -- guarantee at least one event.

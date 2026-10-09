@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 import { produce } from 'immer'
-import type { WorldState } from '@/domain/schemas'
+import { emptyIgptState, type WorldState } from '@/domain/schemas'
 import { createNewGame } from '../newGame'
 import { advanceTurns } from '../engine/turnEngine'
 import { daysToTicks, isGameOver } from '../gameDate'
@@ -20,7 +20,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         break
       }
       case 'LOAD_STATE': {
-        state = msg.state
+        // Saves from before sanctions/IGPT existed lack these fields.
+        state = { ...msg.state, sanctions: msg.state.sanctions ?? {}, igpt: { ...emptyIgptState(), ...msg.state.igpt } }
         post({ type: 'STATE', state, requestId: msg.requestId })
         break
       }
@@ -35,6 +36,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         if (!state) throw new Error('No active game')
         if (isGameOver(state.turn)) throw new Error('The game has ended')
         state = advanceTurns(state, daysToTicks(msg.days))
+        post({ type: 'STATE', state, requestId: msg.requestId })
+        break
+      }
+      case 'SET_IGPT_AUTOPILOT': {
+        if (!state) throw new Error('No active game')
+        state = produce(state, (draft) => {
+          draft.igpt.autopilot = msg.enabled
+        })
         post({ type: 'STATE', state, requestId: msg.requestId })
         break
       }

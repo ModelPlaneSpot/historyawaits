@@ -34,4 +34,5 @@ export const workerClient = {
   submitAction: (plan: import('@/domain/schemas').StructuredPlan) => send({ type: 'SUBMIT_ACTION', plan }),
   endTurn: (days: number) => send({ type: 'END_TURN', days }),
   toggleFollowStory: (storyId: string) => send({ type: 'TOGGLE_FOLLOW_STORY', storyId }),
+  setIgptAutopilot: (enabled: boolean) => send({ type: 'SET_IGPT_AUTOPILOT', enabled }),
 }

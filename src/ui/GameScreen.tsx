@@ -11,6 +11,7 @@ import { AdvisorPanel } from './AdvisorPanel'
 import { TurnSummaryModal } from './TurnSummaryModal'
 import { EventDetailPanel } from './EventDetailPanel'
 import { StandingsModal } from './StandingsModal'
+import { IgptPanel } from './IgptPanel'
 import { formatGameDate, isGameOver, turnToDate, GAME_START_DATE, TURN_LENGTH_OPTIONS, TICK_DAYS } from '@/simulation/gameDate'
 
 export function GameScreen() {
@@ -28,6 +29,7 @@ export function GameScreen() {
   const toggleAdvisor = useGameStore((s) => s.toggleAdvisor)
   const toggleNews = useGameStore((s) => s.toggleNews)
   const toggleStandings = useGameStore((s) => s.toggleStandings)
+  const toggleIgpt = useGameStore((s) => s.toggleIgpt)
   const turnLengthDays = useGameStore((s) => s.turnLengthDays)
   const setTurnLengthDays = useGameStore((s) => s.setTurnLengthDays)
   const sidePanelRef = useRef<HTMLDivElement>(null)
@@ -55,6 +57,9 @@ export function GameScreen() {
         </span>
         <div className="spacer" />
         <AiStatusBadge />
+        <button onClick={toggleIgpt} className={worldState.igpt.autopilot ? 'igpt-autopilot-on' : ''}>
+          IGPT{worldState.igpt.autopilot ? ' (autopilot)' : ''}
+        </button>
         <button onClick={toggleStandings}>Standings</button>
         <button onClick={toggleNews}>World News</button>
         <button onClick={toggleAdvisor}>AI Advisor</button>
@@ -98,6 +103,7 @@ export function GameScreen() {
       <TurnSummaryModal />
       <EventDetailPanel />
       <StandingsModal />
+      <IgptPanel />
     </div>
   )
 }

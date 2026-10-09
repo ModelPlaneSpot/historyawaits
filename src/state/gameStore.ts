@@ -40,6 +40,10 @@ function loadTurnLength(): number {
   return DEFAULT_TURN_LENGTH_DAYS
 }
 
+/** Who turned the player's intent into an action: the local language model,
+ *  the deterministic parser, or an IGPT suggestion the player executed. */
+export type CommandSource = 'ai' | 'fallback' | 'igpt'
+
 export interface FocusTarget {
   entityId: string | null
   regionId: string | null
@@ -50,7 +54,7 @@ export interface LogEntry {
   turn: number
   kind: 'player' | 'result' | 'error' | 'system'
   text: string
-  source?: 'ai' | 'fallback'
+  source?: CommandSource
 }
 
 export interface PendingCommand {
@@ -100,6 +104,7 @@ interface GameStore {
   /** How many in-game days "End Turn" advances (3, 30, 60, 90 or 180). */
   turnLengthDays: number
   standingsOpen: boolean
+  igptOpen: boolean
 
   /** What the player's last resolved command was about, for pronoun
    *  resolution ("send another 20,000 there" / "attack them"). */
@@ -111,7 +116,8 @@ interface GameStore {
   continueFromSave: (id: string) => Promise<void>
   refreshSaves: () => Promise<void>
   submitCommand: (text: string) => Promise<void>
-  executePlan: (plan: StructuredPlan, source: 'ai' | 'fallback') => Promise<void>
+  executePlan: (plan: StructuredPlan, source: CommandSource) => Promise<void>
+  executeIgptSuggestion: (action: StructuredAction, summary: string) => Promise<void>
   confirmPendingCommand: () => Promise<void>
   cancelPendingCommand: () => void
   endTurn: () => Promise<void>
@@ -133,6 +139,8 @@ interface GameStore {
   toggleFollowStory: (id: string) => Promise<void>
   setTurnLengthDays: (days: number) => void
   toggleStandings: () => void
+  toggleIgpt: () => void
+  setIgptAutopilot: (enabled: boolean) => Promise<void>
 }
 
 let logCounter = 0
@@ -166,6 +174,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
   storyDetailId: null,
   turnLengthDays: loadTurnLength(),
   standingsOpen: false,
+  igptOpen: false,
 
   lastEntityId: null,
   lastRegionId: null,
@@ -250,7 +259,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await get().executePlan(parsed.plan, parsed.source)
   },
 
-  executePlan: async (plan: StructuredPlan, source: 'ai' | 'fallback') => {
+  executePlan: async (plan: StructuredPlan, source: CommandSource) => {
     const { worldState } = get()
     if (!worldState) return
     const res = await workerClient.submitAction(plan)
@@ -265,6 +274,13 @@ export const useGameStore = create<GameStore>((set, get) => ({
         pendingCommand: null,
       }))
     }
+  },
+
+  executeIgptSuggestion: async (action, summary) => {
+    const worldState = get().worldState
+    if (!worldState) return
+    set((s) => ({ log: [...s.log, makeLogEntry({ turn: worldState.turn, kind: 'player', text: `IGPT: ${summary}`, source: 'igpt' })] }))
+    await get().executePlan({ steps: [action] }, 'igpt')
   },
 
   confirmPendingCommand: async () => {
@@ -339,7 +355,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await get().refreshSaves()
   },
 
-  returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false, standingsOpen: false }),
+  returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false, standingsOpen: false, igptOpen: false }),
 
   toggleAdvisor: () => {
     set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null }))
@@ -384,6 +400,15 @@ export const useGameStore = create<GameStore>((set, get) => ({
     set({ turnLengthDays: days })
   },
   toggleStandings: () => set((s) => ({ standingsOpen: !s.standingsOpen })),
+  toggleIgpt: () => set((s) => ({ igptOpen: !s.igptOpen })),
+  setIgptAutopilot: async (enabled) => {
+    const res = await workerClient.setIgptAutopilot(enabled)
+    if (res.type !== 'STATE') return
+    set((s) => ({
+      worldState: res.state,
+      log: [...s.log, makeLogEntry({ turn: res.state.turn, kind: 'system', text: enabled ? 'IGPT autopilot ON: IGPT will run your country as turns advance.' : 'IGPT autopilot OFF: you are back in command.' })],
+    }))
+  },
 }))
 
 localAiEngine.onStatusChange((status, report) => {

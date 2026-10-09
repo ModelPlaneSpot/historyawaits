@@ -1,4 +1,4 @@
-import { WorldState, SAVE_FORMAT_VERSION, type WorldEntity, type Region, type Organization, type Treaty } from '@/domain/schemas'
+import { WorldState, SAVE_FORMAT_VERSION, emptyIgptState, type WorldEntity, type Region, type Organization, type Treaty } from '@/domain/schemas'
 import entitiesData from '@/data/generated/entities.json'
 import regionsData from '@/data/generated/regions.json'
 import organizationsData from '@/data/generated/organizations.json'
@@ -40,6 +40,8 @@ export function createNewGame(playerEntityId: string): WorldState {
       },
     ],
     storyEvents: {},
+    sanctions: {},
+    igpt: emptyIgptState(),
   }
 
   applyOpeningScenario(state)

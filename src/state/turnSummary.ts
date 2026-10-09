@@ -5,6 +5,8 @@ export interface TurnSummary {
   fromTurn: number
   turn: number
   playerChanges: string[]
+  /** What IGPT decided for the player's country this turn (autopilot). */
+  autopilotDecisions: string[]
   worldEvents: NewsEvent[]
 }
 
@@ -13,6 +15,7 @@ export function buildTurnSummary(prev: WorldState, next: WorldState): TurnSummar
   const nextPlayer = next.entities[next.playerEntityId]
   return {
     fromTurn: prev.turn,
+    autopilotDecisions: next.igpt.playerLog.filter((e) => e.turn > prev.turn).map((e) => e.summary.replace(/^[^:]+: /, '')),
     turn: next.turn,
     playerChanges: prevPlayer && nextPlayer ? buildPlayerChanges(prevPlayer, nextPlayer) : [],
     // advanceTurn tags every event with the tick it happened on, while

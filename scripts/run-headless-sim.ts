@@ -9,6 +9,8 @@ const TURNS = Number(process.argv[2] ?? FINAL_TICK)
 
 function main() {
   let state = createNewGame('USA')
+  // No human player here: let IGPT run the USA too, like every other country.
+  state.igpt.autopilot = true
   console.log(`Running ${TURNS} ticks headless (${formatGameDate(0)} onward)...`)
   const start = Date.now()
   let quietTicks = 0
@@ -43,7 +45,7 @@ function main() {
 
   const standings = computeStandings(final)
   for (const cat of VICTORY_CATEGORIES) {
-    const top = standings.byCategory[cat.id].slice(0, 3).map((s) => s.name).join(', ')
+    const top = standings.byCategory[cat.id].slice(0, 5).map((s) => (cat.id === 'economy' ? `${s.name} (${(s.gdpUsd / 1e12).toFixed(0)}T, ${s.debtToGdpPct.toFixed(0)}% debt)` : s.name)).join(', ')
     console.log(`${cat.title}: ${top}`)
   }
   console.log(`Overall winner: ${standings.overall[0]?.name} (${standings.overall[0]?.categoriesWon} categories)`)

@@ -36,6 +36,7 @@ export function CommandConsole() {
             {entry.kind === 'player' ? '> ' : ''}
             {entry.text}
             {entry.source === 'ai' && <span style={{ color: 'var(--text-dim)' }}> (AI)</span>}
+            {entry.source === 'igpt' && <span style={{ color: 'var(--text-dim)' }}> (IGPT)</span>}
           </div>
         ))}
       </div>

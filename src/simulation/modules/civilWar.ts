@@ -3,14 +3,22 @@ import { transferRegion } from './territory'
 import { generateDistinguishableColor } from './colorGen'
 import { createStory } from './story'
 import { buildCivilWarNarrative } from './storyTemplates'
-import { WEEK_FRACTION } from '../gameDate'
+import { WEEK_FRACTION, yearsToTicks } from '../gameDate'
 
 const STABILITY_THRESHOLD = 15
 const MIN_REGIONS_FOR_CIVIL_WAR = 2
 
-function alreadyInCivilWar(state: WorldState, entityId: string): boolean {
+/** A country can't fall into a new civil war while one is running, or within
+ *  RECOVERY_YEARS of the last one ending -- otherwise a fragile state cycles
+ *  straight from one rebellion into the next. */
+const RECOVERY_YEARS = 3
+
+function alreadyInCivilWar(state: WorldState, entityId: string, turn: number): boolean {
   return Object.values(state.wars).some(
-    (w) => w.active && w.isCivilWar && (w.attackerIds.includes(entityId) || w.defenderIds.includes(entityId)),
+    (w) =>
+      w.isCivilWar &&
+      (w.attackerIds.includes(entityId) || w.defenderIds.includes(entityId)) &&
+      (w.active || (w.endTurn !== null && turn - w.endTurn < yearsToTicks(RECOVERY_YEARS))),
   )
 }
 
@@ -21,7 +29,7 @@ export function considerCivilWar(state: WorldState, entity: WorldEntity, turn: n
   if (entity.government.stability >= STABILITY_THRESHOLD) return
   if (entity.government.type === 'failed_state') return // already collapsed; nothing left to fragment
   if (entity.territoryRegionIds.length < MIN_REGIONS_FOR_CIVIL_WAR) return
-  if (alreadyInCivilWar(state, entity.id)) return
+  if (alreadyInCivilWar(state, entity.id, turn)) return
 
   const risk = (STABILITY_THRESHOLD - entity.government.stability) / STABILITY_THRESHOLD // 0..1
   if (rng() >= risk * 0.05 * WEEK_FRACTION) return
