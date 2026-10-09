@@ -7,9 +7,10 @@ import { advanceGovernment } from '../modules/government'
 import { advanceWars } from '../modules/war'
 import { runAiDecisions } from '../modules/aiDecisions'
 import { considerCivilWar } from '../modules/civilWar'
-import { generateWorldEvents } from '../modules/worldEvents'
+import { generateWorldEvents, forceWorldEvent } from '../modules/worldEvents'
+import { FINAL_TICK } from '../gameDate'
 
-/** Advance the world by exactly one turn (one week). Pure function: takes a
+/** Advance the world by exactly one tick (3 in-game days). Pure function: takes a
  *  state, returns a new state, never mutates its input (callers -- the save
  *  system, undo/redo, the worker message boundary -- all depend on that).
  *
@@ -41,12 +42,18 @@ export function advanceTurn(state: WorldState, rng: () => number = Math.random):
     runAiDecisions(draft, nextTurn, rng)
     generateWorldEvents(draft, nextTurn, rng)
 
+    // Every tick is an event round -- guarantee at least one event.
+    if (!draft.news.some((n) => n.turn === nextTurn)) forceWorldEvent(draft, nextTurn, rng)
+
     draft.turn = nextTurn
   })
 }
 
+/** Advances `count` ticks (a multi-day player turn), stopping at the end of
+ *  the game (January 1, 2126). Every AI country acts on every tick, after
+ *  the player's commands for the turn have already been applied. */
 export function advanceTurns(state: WorldState, count: number, rng: () => number = Math.random): WorldState {
   let next = state
-  for (let i = 0; i < count; i++) next = advanceTurn(next, rng)
+  for (let i = 0; i < count && next.turn < FINAL_TICK; i++) next = advanceTurn(next, rng)
   return next
 }

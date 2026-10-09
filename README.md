@@ -4,6 +4,13 @@ A browser-based geopolitical grand-strategy game. Command your nation with natur
 
 Covers ~195 sovereign countries plus a curated set of disputed/non-UN territories (Taiwan, Palestine, Western Sahara, Kosovo, Northern Cyprus, Somaliland), each with real admin-1 (state/province) borders, economy, military, government, and diplomacy simulation.
 
+## Calendar, turns & victory
+
+- The game runs from **January 1, 2026 to January 1, 2126**. The world advances in 3-day ticks, and every tick is an *event round*: at least one world event happens every 3 in-game days (`forceWorldEvent` in `src/simulation/modules/worldEvents.ts` fills in quiet ticks).
+- Before ending a turn the player picks how long it lasts: 3 days (1 event round), 30 days (10), 60 days (20), 90 days (30), or 6 months (60). The player's commands apply first; then every AI country acts on every tick of the turn.
+- The world starts mid-history (`src/simulation/openingScenario.ts`): the Russia–Ukraine war is underway (Luhansk occupied; Donetsk, Zaporizhzhia, Kherson and Kharkiv contested) and Thailand–Cambodia border tension is simmering. Both run through the normal AI simulation from there.
+- **Victory** (`src/simulation/victory.ts`): on January 1, 2126 countries are ranked in three categories: **Largest Country** (land area controlled, from `regionAreas.json`), **Strongest Economy** (GDP ÷ (1 + debt-to-GDP), so debt counts against you), and **Strongest Military**. The country that leads the most categories wins (ties go to the best combined rank). The **Standings** button shows the live race at any time.
+
 ## Architecture
 
 ```
@@ -38,7 +45,7 @@ Player command → Local AI (WebGPU, in-browser) → Structured action → Valid
 npm install
 npm run dev          # start the dev server
 npm test              # run the vitest suite (engine, parser, validator)
-npm run sim:headless  # run N simulated turns with no UI, checks for NaN/instability
+npm run sim:headless  # simulate the whole century (or N ticks) with no UI, checks for NaN/instability and prints the winners
 ```
 
 To regenerate the baseline data or geo topology (not needed unless you're changing the data pipeline):
@@ -46,6 +53,7 @@ To regenerate the baseline data or geo topology (not needed unless you're changi
 ```bash
 npm run gen:geo   # downloads Natural Earth shapefiles, rebuilds public/geo/*.topojson
 npm run gen:data  # rebuilds src/data/generated/*.json
+npm run gen:areas # rebuilds src/data/generated/regionAreas.json (region land areas, from the geo topology)
 ```
 
 ### Project layout

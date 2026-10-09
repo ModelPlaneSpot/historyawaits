@@ -1,6 +1,8 @@
 import type { WorldEntity, WorldState, NewsEvent } from '@/domain/schemas'
 
 export interface TurnSummary {
+  /** First and last tick the turn covered (see gameDate.ts). */
+  fromTurn: number
   turn: number
   playerChanges: string[]
   worldEvents: NewsEvent[]
@@ -10,13 +12,14 @@ export function buildTurnSummary(prev: WorldState, next: WorldState): TurnSummar
   const prevPlayer = prev.entities[prev.playerEntityId]
   const nextPlayer = next.entities[next.playerEntityId]
   return {
+    fromTurn: prev.turn,
     turn: next.turn,
     playerChanges: prevPlayer && nextPlayer ? buildPlayerChanges(prevPlayer, nextPlayer) : [],
-    // advanceTurn tags every event it generates with the NEW turn number,
-    // while player-command news carries the turn it was issued on (the OLD
-    // number, since commands don't advance the clock) -- so this filter
-    // naturally picks up only what the world did on its own this turn.
-    worldEvents: next.news.filter((n) => n.turn === next.turn),
+    // advanceTurn tags every event with the tick it happened on, while
+    // player-command news carries the tick it was issued on (prev.turn, since
+    // commands don't advance the clock) -- so this picks up only what the
+    // world did on its own across every tick of this turn.
+    worldEvents: next.news.filter((n) => n.turn > prev.turn),
   }
 }
 

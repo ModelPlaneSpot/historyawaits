@@ -7,6 +7,7 @@ import { localAiEngine, type AiEngineStatus } from '@/ai/localAiEngine'
 import type { InitProgressReport } from '@mlc-ai/web-llm'
 import { sendAdvisorMessage, emptyAdvisorState, type AdvisorState } from '@/ai/advisorChat'
 import { buildTurnSummary, type TurnSummary } from './turnSummary'
+import { DEFAULT_TURN_LENGTH_DAYS, TURN_LENGTH_OPTIONS, formatGameDate, isGameOver } from '@/simulation/gameDate'
 import {
   saveGame,
   loadGame,
@@ -25,6 +26,18 @@ function startLocalAiIfSupported(): void {
   if (localAiEngine.getStatus() === 'unloaded' && localAiEngine.supportsWebGpu()) {
     void localAiEngine.initialize()
   }
+}
+
+const TURN_LENGTH_KEY = 'historyawaits.turnLengthDays'
+
+function loadTurnLength(): number {
+  try {
+    const saved = Number(localStorage.getItem(TURN_LENGTH_KEY))
+    if (TURN_LENGTH_OPTIONS.some((o) => o.days === saved)) return saved
+  } catch {
+    // storage unavailable -- fall through to the default
+  }
+  return DEFAULT_TURN_LENGTH_DAYS
 }
 
 export interface FocusTarget {
@@ -84,6 +97,9 @@ interface GameStore {
   cameraAutoFollow: boolean
   newsOpen: boolean
   storyDetailId: string | null
+  /** How many in-game days "End Turn" advances (3, 30, 60, 90 or 180). */
+  turnLengthDays: number
+  standingsOpen: boolean
 
   /** What the player's last resolved command was about, for pronoun
    *  resolution ("send another 20,000 there" / "attack them"). */
@@ -115,6 +131,8 @@ interface GameStore {
   openStory: (id: string) => void
   closeStory: () => void
   toggleFollowStory: (id: string) => Promise<void>
+  setTurnLengthDays: (days: number) => void
+  toggleStandings: () => void
 }
 
 let logCounter = 0
@@ -146,6 +164,8 @@ export const useGameStore = create<GameStore>((set, get) => ({
   cameraAutoFollow: true,
   newsOpen: false,
   storyDetailId: null,
+  turnLengthDays: loadTurnLength(),
+  standingsOpen: false,
 
   lastEntityId: null,
   lastRegionId: null,
@@ -263,23 +283,33 @@ export const useGameStore = create<GameStore>((set, get) => ({
 
   endTurn: async () => {
     const prevState = get().worldState
+    if (!prevState || isGameOver(prevState.turn)) return
     set({ busy: true })
-    const res = await workerClient.endTurn()
+    const res = await workerClient.endTurn(get().turnLengthDays)
     if (res.type === 'STATE') {
-      const summary = prevState ? buildTurnSummary(prevState, res.state) : null
+      const summary = buildTurnSummary(prevState, res.state)
+      const gameOver = isGameOver(res.state.turn)
       set((s) => ({
         worldState: res.state,
         busy: false,
-        log: [...s.log, makeLogEntry({ turn: res.state.turn, kind: 'system', text: `Turn ${res.state.turn} begins.` })],
+        log: [
+          ...s.log,
+          makeLogEntry({
+            turn: res.state.turn,
+            kind: 'system',
+            text: gameOver ? `${formatGameDate(res.state.turn)}: the century is over.` : `${formatGameDate(res.state.turn)} begins.`,
+          }),
+        ],
         turnSummary: summary,
-        showTurnSummary: summary !== null,
+        showTurnSummary: !gameOver,
+        standingsOpen: gameOver,
       }))
 
       // Critical events (major war, civil war, coup, collapse, major
       // territorial change...) pull the camera toward them automatically,
       // unless the player has turned that off.
       if (get().cameraAutoFollow) {
-        const critical = summary?.worldEvents.find((e) => e.importance === 'critical')
+        const critical = summary.worldEvents.find((e) => e.importance === 'critical')
         if (critical && (critical.locationEntityId || critical.locationRegionId)) {
           get().focusOn({ entityId: critical.locationEntityId, regionId: critical.locationRegionId })
         }
@@ -309,7 +339,7 @@ export const useGameStore = create<GameStore>((set, get) => ({
     await get().refreshSaves()
   },
 
-  returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false }),
+  returnToMenu: () => set({ screen: 'menu', worldState: null, advisorOpen: false, standingsOpen: false }),
 
   toggleAdvisor: () => {
     set((s) => ({ advisorOpen: !s.advisorOpen, advisorError: null }))
@@ -344,6 +374,16 @@ export const useGameStore = create<GameStore>((set, get) => ({
     const res = await workerClient.toggleFollowStory(id)
     if (res.type === 'STATE') set({ worldState: res.state })
   },
+
+  setTurnLengthDays: (days) => {
+    try {
+      localStorage.setItem(TURN_LENGTH_KEY, String(days))
+    } catch {
+      // not persisted; still applies for this session
+    }
+    set({ turnLengthDays: days })
+  },
+  toggleStandings: () => set((s) => ({ standingsOpen: !s.standingsOpen })),
 }))
 
 localAiEngine.onStatusChange((status, report) => {

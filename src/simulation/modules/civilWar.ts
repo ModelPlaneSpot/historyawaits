@@ -3,6 +3,7 @@ import { transferRegion } from './territory'
 import { generateDistinguishableColor } from './colorGen'
 import { createStory } from './story'
 import { buildCivilWarNarrative } from './storyTemplates'
+import { WEEK_FRACTION } from '../gameDate'
 
 const STABILITY_THRESHOLD = 15
 const MIN_REGIONS_FOR_CIVIL_WAR = 2
@@ -23,7 +24,7 @@ export function considerCivilWar(state: WorldState, entity: WorldEntity, turn: n
   if (alreadyInCivilWar(state, entity.id)) return
 
   const risk = (STABILITY_THRESHOLD - entity.government.stability) / STABILITY_THRESHOLD // 0..1
-  if (rng() >= risk * 0.05) return
+  if (rng() >= risk * 0.05 * WEEK_FRACTION) return
 
   startCivilWar(state, entity, turn, rng)
 }

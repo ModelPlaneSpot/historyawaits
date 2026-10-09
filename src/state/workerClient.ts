@@ -32,6 +32,6 @@ export const workerClient = {
   newGame: (playerEntityId: string) => send({ type: 'NEW_GAME', playerEntityId }),
   loadState: (state: import('@/domain/schemas').WorldState) => send({ type: 'LOAD_STATE', state }),
   submitAction: (plan: import('@/domain/schemas').StructuredPlan) => send({ type: 'SUBMIT_ACTION', plan }),
-  endTurn: () => send({ type: 'END_TURN' }),
+  endTurn: (days: number) => send({ type: 'END_TURN', days }),
   toggleFollowStory: (storyId: string) => send({ type: 'TOGGLE_FOLLOW_STORY', storyId }),
 }

@@ -10,7 +10,8 @@ import { AiStatusBadge } from './AiStatusBadge'
 import { AdvisorPanel } from './AdvisorPanel'
 import { TurnSummaryModal } from './TurnSummaryModal'
 import { EventDetailPanel } from './EventDetailPanel'
-import { formatGameDate } from '@/simulation/gameDate'
+import { StandingsModal } from './StandingsModal'
+import { formatGameDate, isGameOver, turnToDate, GAME_START_DATE, TURN_LENGTH_OPTIONS, TICK_DAYS } from '@/simulation/gameDate'
 
 export function GameScreen() {
   const worldState = useGameStore((s) => s.worldState)
@@ -26,6 +27,9 @@ export function GameScreen() {
   const busy = useGameStore((s) => s.busy)
   const toggleAdvisor = useGameStore((s) => s.toggleAdvisor)
   const toggleNews = useGameStore((s) => s.toggleNews)
+  const toggleStandings = useGameStore((s) => s.toggleStandings)
+  const turnLengthDays = useGameStore((s) => s.turnLengthDays)
+  const setTurnLengthDays = useGameStore((s) => s.setTurnLengthDays)
   const sidePanelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -37,6 +41,8 @@ export function GameScreen() {
   const player = worldState.entities[worldState.playerEntityId]
   const selectedEntity = selectedEntityId ? worldState.entities[selectedEntityId] : null
   const selectedRegion = selectedRegionId ? worldState.regions[selectedRegionId] : null
+  const gameOver = isGameOver(worldState.turn)
+  const year = turnToDate(worldState.turn).getUTCFullYear() - GAME_START_DATE.getUTCFullYear() + 1
 
   return (
     <div className="game-screen">
@@ -45,16 +51,29 @@ export function GameScreen() {
         <span className={`fi fi-${player.flagCode}`} />
         <strong>{player.name}</strong>
         <span className="turn-label">
-          Turn {worldState.turn} &middot; {formatGameDate(worldState.turn)}
+          {formatGameDate(worldState.turn)} &middot; {gameOver ? 'Game over' : `Year ${year} of 100`}
         </span>
         <div className="spacer" />
         <AiStatusBadge />
+        <button onClick={toggleStandings}>Standings</button>
         <button onClick={toggleNews}>World News</button>
         <button onClick={toggleAdvisor}>AI Advisor</button>
         <button onClick={() => saveNow()}>Save</button>
         <button onClick={returnToMenu}>Menu</button>
-        <button className="primary" onClick={() => endTurn()} disabled={busy}>
-          {busy ? 'Working...' : 'End Turn'}
+        <select
+          value={turnLengthDays}
+          onChange={(e) => setTurnLengthDays(Number(e.target.value))}
+          disabled={busy || gameOver}
+          title="How far the world advances when you end your turn. There is one event round every 3 days."
+        >
+          {TURN_LENGTH_OPTIONS.map((o) => (
+            <option key={o.days} value={o.days}>
+              {o.label} ({o.days / TICK_DAYS} event{o.days === TICK_DAYS ? '' : 's'})
+            </option>
+          ))}
+        </select>
+        <button className="primary" onClick={() => endTurn()} disabled={busy || gameOver}>
+          {busy ? 'Simulating...' : gameOver ? 'Game Over' : 'End Turn'}
         </button>
       </div>
       <div className="game-body">
@@ -78,6 +97,7 @@ export function GameScreen() {
       <NewsFeedPanel />
       <TurnSummaryModal />
       <EventDetailPanel />
+      <StandingsModal />
     </div>
   )
 }

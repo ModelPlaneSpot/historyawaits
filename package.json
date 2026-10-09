@@ -12,6 +12,7 @@
     "test:watch": "vitest",
     "gen:data": "tsx scripts/generate-baseline-data.ts",
     "gen:geo": "tsx scripts/build-geo-topology.ts",
+    "gen:areas": "tsx scripts/build-region-areas.ts",
     "sim:headless": "tsx scripts/run-headless-sim.ts"
   },
   "dependencies": {

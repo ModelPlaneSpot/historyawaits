@@ -1,30 +1,32 @@
 import type { WorldEntity } from '@/domain/schemas'
+import { TICKS_PER_YEAR, WEEK_FRACTION } from '../gameDate'
 
-/** One turn = one week. */
+/** One tick = 3 days (see gameDate.ts). Annual figures are divided by
+ *  TICKS_PER_YEAR; drift rates were tuned per week and scale by WEEK_FRACTION. */
 export function advanceEconomy(entity: WorldEntity): void {
   const econ = entity.economy
   // Higher taxes are a modest drag on growth (a believable cost for "raise taxes").
   const taxDrag = (econ.taxRatePct - 25) * 0.01
-  const growth = (econ.growthRatePct - taxDrag) / 100 / 52
+  const growth = (econ.growthRatePct - taxDrag) / 100 / TICKS_PER_YEAR
   econ.gdpUsd = Math.max(0, econ.gdpUsd * (1 + growth))
 
-  const weeklyTaxRevenue = (econ.gdpUsd * econ.taxRatePct) / 100 / 52
-  const weeklyMilitarySpend = (econ.gdpUsd * econ.militarySpendingPctOfGdp) / 100 / 52
-  const weeklyTradeIncome = econ.tradeBalanceUsd / 52
-  econ.treasuryUsd += weeklyTaxRevenue + weeklyTradeIncome - weeklyMilitarySpend
+  const taxRevenue = (econ.gdpUsd * econ.taxRatePct) / 100 / TICKS_PER_YEAR
+  const militarySpend = (econ.gdpUsd * econ.militarySpendingPctOfGdp) / 100 / TICKS_PER_YEAR
+  const tradeIncome = econ.tradeBalanceUsd / TICKS_PER_YEAR
+  econ.treasuryUsd += taxRevenue + tradeIncome - militarySpend
 
   // Debt drifts up when the treasury runs dry, down when it's flush.
   const treasuryToGdp = econ.gdpUsd > 0 ? econ.treasuryUsd / econ.gdpUsd : 0
-  econ.debtToGdpPct = clamp(econ.debtToGdpPct - treasuryToGdp * 2, 0, 300)
+  econ.debtToGdpPct = clamp(econ.debtToGdpPct - treasuryToGdp * 2 * WEEK_FRACTION, 0, 300)
 
   // Unemployment and inflation drift slowly toward a growth-linked equilibrium.
   const targetUnemployment = clamp(8 - econ.growthRatePct + (econ.taxRatePct - 25) * 0.05, 2, 35)
-  econ.unemploymentRatePct = drift(econ.unemploymentRatePct, targetUnemployment, 0.02)
+  econ.unemploymentRatePct = drift(econ.unemploymentRatePct, targetUnemployment, 0.02 * WEEK_FRACTION)
   const targetInflation = 2 + Math.max(0, econ.growthRatePct - 2) * 0.5
-  econ.inflationPct = drift(econ.inflationPct, targetInflation, 0.02)
+  econ.inflationPct = drift(econ.inflationPct, targetInflation, 0.02 * WEEK_FRACTION)
 
   // High taxes fuel public unrest; low taxes (within reason) ease it.
-  entity.population.unrest = clamp(entity.population.unrest + (econ.taxRatePct - 25) * 0.003, 0, 100)
+  entity.population.unrest = clamp(entity.population.unrest + (econ.taxRatePct - 25) * 0.003 * WEEK_FRACTION, 0, 100)
 
   econ.gdpPerCapitaUsd = entity.population.total > 0 ? econ.gdpUsd / entity.population.total : 0
 }

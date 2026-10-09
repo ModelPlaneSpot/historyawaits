@@ -27,7 +27,7 @@ async function run(cmd) {
 await page.goto(baseUrl, { waitUntil: 'networkidle' })
 await page.waitForSelector('text=HISTORY AWAITS', { timeout: 20000 })
 await page.click('text=United States')
-await page.waitForSelector('text=Turn 0', { timeout: 20000 })
+await page.waitForSelector('text=January 1, 2026', { timeout: 20000 })
 
 console.log('--- Bad spelling ---')
 await run('atack iran')

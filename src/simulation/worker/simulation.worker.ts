@@ -2,7 +2,8 @@
 import { produce } from 'immer'
 import type { WorldState } from '@/domain/schemas'
 import { createNewGame } from '../newGame'
-import { advanceTurn } from '../engine/turnEngine'
+import { advanceTurns } from '../engine/turnEngine'
+import { daysToTicks, isGameOver } from '../gameDate'
 import { validateAndApplyPlan } from '../validators/actionValidator'
 import { toggleFollowStory } from '../modules/story'
 import type { WorkerRequest, WorkerResponse } from './protocol'
@@ -32,7 +33,8 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       }
       case 'END_TURN': {
         if (!state) throw new Error('No active game')
-        state = advanceTurn(state)
+        if (isGameOver(state.turn)) throw new Error('The game has ended')
+        state = advanceTurns(state, daysToTicks(msg.days))
         post({ type: 'STATE', state, requestId: msg.requestId })
         break
       }

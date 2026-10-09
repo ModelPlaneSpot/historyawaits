@@ -30,7 +30,7 @@ await shot('menu')
 console.log('[ok] Main menu loaded')
 
 await page.click('text=United States')
-await page.waitForSelector('text=Turn 0', { timeout: 20000 })
+await page.waitForSelector('text=January 1, 2026', { timeout: 20000 })
 await shot('new-game')
 console.log('[ok] New game started as United States')
 
@@ -84,9 +84,11 @@ console.log(`[${logText.includes('Built 100 tanks') ? 'ok' : 'FAIL'}] "build 100
 await shot('commands')
 
 // Turn progression + autosave.
+// Default turn length is 30 days = 10 event rounds.
 await page.click('button:has-text("End Turn")')
-await page.waitForSelector('text=Turn 1', { timeout: 20000 })
-console.log('[ok] End Turn advanced to Turn 1')
+await page.waitForSelector('text=January 31, 2026', { timeout: 20000 })
+const eventsHeader = await page.textContent('.turn-summary-modal')
+console.log(`[${/World Events \((\d{2,})\)/.test(eventsHeader) ? 'ok' : 'FAIL'}] 30-day turn advanced to January 31, 2026 with 10+ world events`)
 await shot('turn-1')
 
 // The turn summary modal blocks the rest of the UI until acknowledged.
@@ -96,13 +98,27 @@ if (await continueBtn.count() > 0) {
   console.log('[ok] Turn summary modal shown and dismissed')
 }
 
+// A 6-month turn = 60 event rounds.
+await page.selectOption('.top-bar select', '180')
+await page.click('button:has-text("End Turn")')
+await page.waitForSelector('text=July 30, 2026', { timeout: 60000 })
+console.log('[ok] 6-month turn advanced to July 30, 2026')
+await shot('six-months')
+await page.locator('button:has-text("Continue")').click()
+
+await page.click('button:has-text("Standings")')
+await page.waitForSelector('text=Largest Country', { timeout: 10000 })
+console.log('[ok] Standings show the three victory categories')
+await shot('standings')
+await page.click('.standings-modal button:has-text("Close")')
+
 await page.click('button:has-text("Menu")')
 await page.waitForSelector('text=HISTORY AWAITS', { timeout: 20000 })
 await page.waitForSelector('text=Autosave', { timeout: 20000 })
 console.log('[ok] Returned to menu, autosave entry visible')
 await page.click('text=Autosave')
-await page.waitForSelector('text=Turn 1', { timeout: 20000 })
-console.log('[ok] Loaded autosave, turn state persisted (Turn 1)')
+await page.waitForSelector('text=July 30, 2026', { timeout: 20000 })
+console.log('[ok] Loaded autosave, date persisted (July 30, 2026)')
 await shot('reloaded')
 
 console.log('CONSOLE ERRORS:', errors.length === 0 ? 'none' : JSON.stringify(errors, null, 2))

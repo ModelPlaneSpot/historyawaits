@@ -15,6 +15,7 @@ export const HISTORICAL_RIVALRIES: [string, string][] = [
   ['MAR', 'ESH'],
   ['CHN', 'TWN'],
   ['SOM', 'SOL'],
+  ['THA', 'KHM'],
 ]
 
 const RIVALRY_KEYS = new Set(HISTORICAL_RIVALRIES.flatMap(([a, b]) => [`${a}|${b}`, `${b}|${a}`]))

@@ -11,12 +11,12 @@ page.on('pageerror', (err) => errors.push('pageerror: ' + err.message))
 await page.goto(baseUrl, { waitUntil: 'networkidle' })
 await page.waitForSelector('text=HISTORY AWAITS', { timeout: 20000 })
 await page.click('text=United States')
-await page.waitForSelector('text=Turn 0', { timeout: 20000 })
+await page.waitForSelector('text=January 1, 2026', { timeout: 20000 })
 
 const start = Date.now()
 for (let i = 1; i <= TURNS; i++) {
   await page.click('button:has-text("End Turn")')
-  await page.waitForSelector(`text=Turn ${i}`, { timeout: 20000 })
+  await page.waitForSelector(".turn-summary-modal", { timeout: 20000 })
   const continueBtn = page.locator('button:has-text("Continue")')
   if (await continueBtn.count() > 0) await continueBtn.click()
 }

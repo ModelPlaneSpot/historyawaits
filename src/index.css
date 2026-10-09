@@ -865,3 +865,80 @@ h3 {
   margin-top: 0.6rem;
   line-height: 1.4;
 }
+
+/* --- Turn summary dates & standings --- */
+.turn-summary-date {
+  color: var(--text-dim);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  margin-right: 0.5rem;
+}
+.standings-modal {
+  width: min(560px, 94vw);
+  max-height: 88vh;
+}
+.standings-scroll {
+  overflow-y: auto;
+}
+.standings-note {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+}
+.standings-desc {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: normal;
+}
+.standings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.88rem;
+}
+.standings-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.25rem 0.4rem;
+  border-radius: 4px;
+}
+.standings-row.is-player {
+  background: var(--bg-panel-raised);
+  outline: 1px solid var(--accent-dim);
+}
+.standings-rank {
+  width: 1.8rem;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+.standings-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.standings-value {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.standings-gap {
+  color: var(--text-dim);
+  padding-left: 0.6rem;
+}
+.standings-verdict-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.standings-verdict-title.won {
+  color: var(--accent);
+}
+.standings-verdict-sub {
+  color: var(--text-dim);
+  margin-top: 0.3rem;
+}
+.turn-summary-fixed {
+  flex-shrink: 0;
+  max-height: 30vh;
+}

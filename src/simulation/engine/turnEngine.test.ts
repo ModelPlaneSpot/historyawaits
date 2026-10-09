@@ -54,7 +54,7 @@ describe('war module', () => {
     const next = produce(state, (draft) => {
       applyDeclareWar(draft, 'USA', 'PRK', 1)
     })
-    const war = Object.values(next.wars)[0]
+    const war = next.wars['WAR-USA-PRK-1']
     expect(war.active).toBe(true)
     expect(war.attackerIds).toContain('USA')
     expect(war.defenderIds).toContain('PRK')
@@ -75,7 +75,7 @@ describe('war module', () => {
     expect(militaryStrength(state.entities.USA)).toBeGreaterThan(militaryStrength(state.entities.SOL) * 10)
 
     let turn = 1
-    let war = Object.values(state.wars)[0]
+    let war = state.wars['WAR-USA-SOL-1']
     const rng = fixedRng(42)
     while (war.active && turn < 200) {
       turn++
@@ -96,7 +96,7 @@ describe('war module', () => {
     const next = produce(state, (draft) => {
       applyDeclareWar(draft, 'USA', 'PRK', 1)
     })
-    expect(Object.values(next.wars)[0].level).toBe(4)
+    expect(next.wars['WAR-USA-PRK-1'].level).toBe(4)
   })
 
   it('draws an ally into the war and raises its escalation level', () => {
@@ -105,7 +105,7 @@ describe('war module', () => {
       applyFormAlliance(draft, 'CAN', 'USA', 1)
       applyDeclareWar(draft, 'USA', 'PRK', 1)
     })
-    const warId = Object.keys(state.wars)[0]
+    const warId = 'WAR-USA-PRK-1'
     expect(state.wars[warId].attackerIds).not.toContain('CAN')
 
     const rng = () => 0 // always clears the ally-draw-in roll threshold

@@ -5,6 +5,7 @@ import { transferRegion } from './territory'
 import { pushNews } from './news'
 import { createStory, appendStoryStage } from './story'
 import { buildWarNarrative } from './storyTemplates'
+import { WEEK_FRACTION } from '../gameDate'
 
 /** Declares war and links it to a persistent story -- either upgrading an
  *  already-developing story (e.g. a diplomatic_crisis that escalated all the
@@ -137,7 +138,7 @@ export function advanceWars(state: WorldState, turn: number, rng: () => number):
     const total = attackerStrength + defenderStrength
     if (total <= 0) continue
     const balance = (attackerStrength - defenderStrength) / total // -1..1
-    war.warScore = clamp(war.warScore + balance * 5, -100, 100)
+    war.warScore = clamp(war.warScore + balance * 5 * WEEK_FRACTION, -100, 100)
 
     for (const a of war.attackerIds) for (const d of war.defenderIds) adjustOpinion(state, a, d, -1)
 
@@ -174,7 +175,7 @@ function advanceFrontline(state: WorldState, war: War, balance: number, turn: nu
   })
   if (flippable.length === 0) return
 
-  const flipChance = Math.min(0.5, Math.abs(balance) * 0.4)
+  const flipChance = Math.min(0.5, Math.abs(balance) * 0.4) * WEEK_FRACTION
   if (rng() >= flipChance) return
 
   const regionId = flippable[Math.floor(rng() * flippable.length)]
@@ -202,7 +203,7 @@ function considerAllyDrawIn(state: WorldState, war: War, turn: number, rng: () =
     const alliedWithAttacker = entity.allianceIds.some((tid) => state.treaties[tid]?.active && state.treaties[tid].memberIds.some((m) => war.attackerIds.includes(m)))
     const alliedWithDefender = entity.allianceIds.some((tid) => state.treaties[tid]?.active && state.treaties[tid].memberIds.some((m) => war.defenderIds.includes(m)))
     if (alliedWithAttacker === alliedWithDefender) continue
-    if (rng() >= 0.04) continue
+    if (rng() >= 0.04 * WEEK_FRACTION) continue
 
     if (alliedWithAttacker) war.attackerIds.push(entity.id)
     else war.defenderIds.push(entity.id)

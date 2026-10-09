@@ -1,4 +1,5 @@
 import type { WorldEntity, UnitType } from '@/domain/schemas'
+import { WEEK_FRACTION } from '../gameDate'
 
 const UNIT_COST_USD: Record<UnitType, number> = {
   troops: 40000,
@@ -14,12 +15,12 @@ export function advanceMilitary(entity: WorldEntity, atWar: boolean): void {
   const targetActive = Math.round(
     entity.population.total * 0.003 * (1 + mil.mobilizationLevel / 100),
   )
-  mil.personnelActive = Math.round(mil.personnelActive + (targetActive - mil.personnelActive) * 0.05)
+  mil.personnelActive = Math.round(mil.personnelActive + (targetActive - mil.personnelActive) * 0.05 * WEEK_FRACTION)
 
   const moraleTarget = atWar ? 55 : 70
-  mil.morale = clamp(mil.morale + (moraleTarget - mil.morale) * 0.03, 0, 100)
+  mil.morale = clamp(mil.morale + (moraleTarget - mil.morale) * 0.03 * WEEK_FRACTION, 0, 100)
 
-  if (!atWar) mil.mobilizationLevel = Math.max(10, mil.mobilizationLevel - 1)
+  if (!atWar) mil.mobilizationLevel = Math.max(10, mil.mobilizationLevel - WEEK_FRACTION)
 }
 
 export function applyMobilize(entity: WorldEntity, additionalTroops: number): void {

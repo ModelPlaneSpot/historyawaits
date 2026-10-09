@@ -281,3 +281,106 @@ export function considerAiDiplomacy(state: WorldState, turn: number, rng: () => 
     }
   }
 }
+
+/** Passes the first roll (the "does this event fire at all" gate in the
+ *  consider* functions above) and defers to the real rng after that, so a
+ *  forced event still gets a random location, kind, and magnitude. */
+function forcedRng(rng: () => number): () => number {
+  let first = true
+  return () => {
+    if (first) {
+      first = false
+      return 0
+    }
+    return rng()
+  }
+}
+
+function pickEntity(state: WorldState, rng: () => number, filter: (e: WorldEntity) => boolean): WorldEntity | null {
+  const candidates = Object.values(state.entities).filter(filter)
+  if (candidates.length === 0) return null
+  return candidates[Math.floor(rng() * candidates.length)]
+}
+
+const MILITARY_EXERCISE_KINDS = ['large-scale military exercises', 'joint naval drills', 'a snap readiness inspection', 'air force war games']
+const TECH_BREAKTHROUGHS = ['a defense-research breakthrough', 'a new satellite launch', 'an advanced drone program', 'a cyber-defense initiative']
+
+/** Every 3-day tick is one event round: if nothing in the world was newsworthy
+ *  on its own this tick, one of these smaller (but still state-changing)
+ *  events fires somewhere, so there is always at least one event per tick. */
+export function forceWorldEvent(state: WorldState, turn: number, rng: () => number): void {
+  const roll = rng()
+
+  if (roll < 0.2) {
+    const entity = pickEntity(state, rng, (e) => e.territoryRegionIds.length > 0)
+    if (entity) return considerNaturalDisaster(state, entity, turn, forcedRng(rng))
+  }
+
+  if (roll < 0.4) {
+    const entity = pickEntity(state, rng, (e) => Object.keys(e.economy.resources).length > 0)
+    if (entity) return considerResourceEvent(state, entity, turn, forcedRng(rng))
+  }
+
+  if (roll < 0.6 && forceBorderIncident(state, turn, rng)) return
+
+  if (roll < 0.75) {
+    const entity = pickEntity(state, rng, () => true)
+    if (!entity) return
+    if (rng() < 0.6) {
+      entity.economy.growthRatePct += 0.3 + rng() * 0.7
+      pushNews(state, turn, `Investment surge in ${entity.name}`, `Foreign and domestic investment is flowing into ${entity.name}, lifting its growth outlook.`, [entity.id], {
+        category: 'economy',
+        importance: 'minor',
+        locationEntityId: entity.id,
+      })
+    } else {
+      entity.economy.inflationPct += 0.5 + rng() * 1.5
+      pushNews(state, turn, `Prices climb in ${entity.name}`, `Rising fuel and food costs are pushing up inflation in ${entity.name}.`, [entity.id], {
+        category: 'economy',
+        importance: 'minor',
+        locationEntityId: entity.id,
+      })
+    }
+    return
+  }
+
+  const entity = pickEntity(state, rng, (e) => e.military.personnelActive > 0)
+  if (!entity) return
+  if (roll < 0.9) {
+    const kind = MILITARY_EXERCISE_KINDS[Math.floor(rng() * MILITARY_EXERCISE_KINDS.length)]
+    entity.military.morale = clamp(entity.military.morale + 2, 0, 100)
+    pushNews(state, turn, `${entity.name} holds ${kind}`, `${entity.name}'s armed forces have conducted ${kind}, drawing attention from neighboring governments.`, [entity.id], {
+      category: 'military',
+      importance: 'minor',
+      locationEntityId: entity.id,
+    })
+  } else {
+    const kind = TECH_BREAKTHROUGHS[Math.floor(rng() * TECH_BREAKTHROUGHS.length)]
+    entity.military.techLevel = clamp(entity.military.techLevel + 1, 0, 100)
+    pushNews(state, turn, `${entity.name} announces ${kind}`, `${entity.name} has unveiled ${kind}, modestly advancing its military technology.`, [entity.id], {
+      category: 'technology',
+      importance: 'minor',
+      locationEntityId: entity.id,
+    })
+  }
+}
+
+/** A border incident between two countries in the same subregion (the same
+ *  neighbor approximation considerDiplomaticEscalation uses). Repeated
+ *  incidents are what can push a pair below the escalation threshold. */
+function forceBorderIncident(state: WorldState, turn: number, rng: () => number): boolean {
+  const a = pickEntity(state, rng, (e) => e.kind === 'country')
+  if (!a || a.kind !== 'country') return false
+  const b = pickEntity(state, rng, (e) => e.kind === 'country' && e.id !== a.id && e.subregion === a.subregion)
+  if (!b) return false
+  const rel = getOrCreateRelation(a, b.id)
+  if (rel.status === 'war' || rel.status === 'allied') return false
+
+  adjustOpinion(state, a.id, b.id, -(3 + rng() * 5))
+  pushNews(state, turn, `Border incident between ${a.name} and ${b.name}`, `${a.name} and ${b.name} have traded accusations after an incident along their shared frontier.`, [a.id, b.id], {
+    category: 'diplomacy',
+    importance: 'minor',
+    locationEntityId: a.id,
+  })
+  return true
+}

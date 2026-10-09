@@ -1,6 +1,7 @@
 import type { WorldState, WorldEntity, DisputedEntity } from '@/domain/schemas'
 import { pushNews } from './news'
 import { generateDistinguishableColor } from './colorGen'
+import { yearsToTicks } from '../gameDate'
 
 export function transferRegion(state: WorldState, regionId: string, newControllerId: string): void {
   const region = state.regions[regionId]
@@ -112,7 +113,7 @@ export function applyGrantIndependence(state: WorldState, actorId: string, regio
       rulingPartyId: 'party-0',
       stability: 40,
       coupRisk: 15,
-      electionDueTurn: turn + 52,
+      electionDueTurn: turn + yearsToTicks(1),
     },
     parties: [
       { id: 'party-0', name: 'National Unity', ideology: { economicLeft: 50, socialLiberal: 50, nationalism: 60 }, approval: 50, seatShare: 100, ruling: true },

@@ -1,5 +1,6 @@
 import type { WorldState, WorldEntity, RelationStatus, TreatyKind } from '@/domain/schemas'
 import { naturalEquilibrium } from '@/domain/geopolitics'
+import { WEEK_FRACTION } from '../gameDate'
 
 export function getOrCreateRelation(entity: WorldEntity, otherId: string) {
   let rel = entity.relations.find((r) => r.otherEntityId === otherId)
@@ -24,7 +25,7 @@ export function advanceDiplomacy(state: WorldState, entity: WorldEntity): void {
     if (rel.status === 'war') continue
     const other = state.entities[rel.otherEntityId]
     const equilibrium = other ? naturalEquilibrium(entity.id, entity.government.type, other.id, other.government.type) : 0
-    rel.opinion += (equilibrium - rel.opinion) * 0.01
+    rel.opinion += (equilibrium - rel.opinion) * 0.01 * WEEK_FRACTION
 
     if (rel.status === 'allied') continue
     if (rel.status === 'hostile' && rel.opinion > -20) rel.status = 'neutral'

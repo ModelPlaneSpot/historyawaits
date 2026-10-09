@@ -3,6 +3,7 @@ import entitiesData from '@/data/generated/entities.json'
 import regionsData from '@/data/generated/regions.json'
 import organizationsData from '@/data/generated/organizations.json'
 import treatiesData from '@/data/generated/treaties.json'
+import { applyOpeningScenario } from './openingScenario'
 
 export function createNewGame(playerEntityId: string): WorldState {
   const entities = structuredClone(entitiesData) as unknown as Record<string, WorldEntity>
@@ -41,6 +42,7 @@ export function createNewGame(playerEntityId: string): WorldState {
     storyEvents: {},
   }
 
+  applyOpeningScenario(state)
   return WorldState.parse(state)
 }
 

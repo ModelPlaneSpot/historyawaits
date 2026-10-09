@@ -2,15 +2,16 @@ import type { WorldState, WorldEntity } from '@/domain/schemas'
 import { pushNews } from './news'
 import { createStory } from './story'
 import { buildCoupNarrative, buildElectionNarrative } from './storyTemplates'
+import { WEEK_FRACTION, yearsToTicks } from '../gameDate'
 
 export function advanceGovernment(state: WorldState, entity: WorldEntity, turn: number, rng: () => number): void {
   const gov = entity.government
   const unrest = entity.population.unrest
   const economyHealth = clamp(entity.economy.growthRatePct * 5 - entity.economy.unemploymentRatePct, -30, 30)
 
-  gov.stability = clamp(gov.stability + (60 - unrest) * 0.01 + economyHealth * 0.01, 0, 100)
+  gov.stability = clamp(gov.stability + ((60 - unrest) * 0.01 + economyHealth * 0.01) * WEEK_FRACTION, 0, 100)
   entity.population.unrest = clamp(
-    entity.population.unrest + (entity.economy.unemploymentRatePct - 8) * 0.05 - (gov.stability - 50) * 0.01,
+    entity.population.unrest + ((entity.economy.unemploymentRatePct - 8) * 0.05 - (gov.stability - 50) * 0.01) * WEEK_FRACTION,
     0,
     100,
   )
@@ -18,7 +19,7 @@ export function advanceGovernment(state: WorldState, entity: WorldEntity, turn: 
   for (const party of entity.parties) {
     const isRuling = party.id === gov.rulingPartyId
     const perf = isRuling ? economyHealth - unrest * 0.2 : 0
-    party.approval = clamp(party.approval + perf * 0.05 + (rng() - 0.5) * 0.4, 0, 100)
+    party.approval = clamp(party.approval + (perf * 0.05 + (rng() - 0.5) * 0.4) * WEEK_FRACTION, 0, 100)
   }
 
   if (gov.type === 'democracy' && gov.electionDueTurn !== null && turn >= gov.electionDueTurn) {
@@ -26,7 +27,7 @@ export function advanceGovernment(state: WorldState, entity: WorldEntity, turn: 
   }
 
   if (gov.type === 'military_junta' || gov.type === 'authoritarian' || gov.type === 'failed_state') {
-    if (gov.stability < 20 && rng() < gov.coupRisk / 1000) {
+    if (gov.stability < 20 && rng() < (gov.coupRisk / 1000) * WEEK_FRACTION) {
       triggerCoup(state, entity, turn)
     }
   }
@@ -44,7 +45,7 @@ function resolveElection(state: WorldState, entity: WorldEntity, turn: number): 
   const changed = winner.id !== gov.rulingPartyId
   for (const party of entity.parties) party.ruling = party.id === winner.id
   gov.rulingPartyId = winner.id
-  gov.electionDueTurn = turn + 208 // ~4 years, in weekly turns
+  gov.electionDueTurn = turn + yearsToTicks(4)
   if (changed) {
     gov.stability = clamp(gov.stability + 10, 0, 100)
     const title = `${winner.name.toUpperCase()} WINS ELECTION IN ${entity.name.toUpperCase()}`
