@@ -27,6 +27,16 @@ interface EntityIndexItem extends BBox {
   feature: Admin0Feature
 }
 
+/** Admin-1 shapes the source map files under a code with no game country
+ *  of its own, where the land does belong to one (Natural Earth's codes for
+ *  Kosovo and South Sudan). Without this, those shapes caught clicks but
+ *  selected nothing. */
+const ADMIN1_COUNTRY_ALIASES: Record<string, string> = { KOS: 'XKX', SDS: 'SSD' }
+/** Natural Earth's own Gaza/West Bank shapes ("PSX") duplicate the game's
+ *  Palestinian regions (palestine-regions.geojson) and would sit on top of
+ *  them, so they are dropped. */
+const DROPPED_ADMIN1_COUNTRIES = new Set(['PSX'])
+
 const CCN3_TO_ENTITY: Record<string, string> = geoIndex.byCcn3
 const NAME_TO_ENTITY: Record<string, string> = geoIndex.byName
 
@@ -170,7 +180,8 @@ export function MapView({
         admin1Topology.objects.admin1 as GeometryCollection,
       ) as unknown as GeoJSON.FeatureCollection<GeoJSON.Polygon | GeoJSON.MultiPolygon>
       setAdmin0(admin0FC.features as Admin0Feature[])
-      setAdmin1([...(admin1FC.features as Admin1Feature[]), ...palestineGeo.features])
+      const admin1Features = (admin1FC.features as Admin1Feature[]).filter((f) => !DROPPED_ADMIN1_COUNTRIES.has(f.properties.countryIso3))
+      setAdmin1([...admin1Features, ...palestineGeo.features])
     })
     return () => {
       cancelled = true
@@ -338,7 +349,7 @@ export function MapView({
     // Base layer: every admin-1 region, live-colored by its current controller.
     for (const f of admin1ById.values()) {
       const region = worldState.regions[f.properties.id]
-      paintRegion(f, region, f.properties.countryIso3)
+      paintRegion(f, region, ADMIN1_COUNTRY_ALIASES[f.properties.countryIso3] ?? f.properties.countryIso3)
     }
 
     // Fallback layer: entities with no admin-1 geometry render as their whole
@@ -438,6 +449,20 @@ export function MapView({
     return fallbackHomeId
   }
 
+  /** What a hit on an admin-1 shape selects: the game region and the country
+   *  shown for it. A shape the game has no region for resolves to its
+   *  country's first region; null if it belongs to no game country at all
+   *  (small overseas territories), so the click can fall through. */
+  function resolveRegionHit(feature: Admin1Feature): { regionId: string; entityId: string } | null {
+    const regionId = feature.properties.id
+    const homeId = ADMIN1_COUNTRY_ALIASES[feature.properties.countryIso3] ?? feature.properties.countryIso3
+    if (worldState.regions[regionId]) return { regionId, entityId: regionControllerId(regionId, homeId) }
+    const home = worldState.entities[homeId]
+    const fallbackRegionId = home?.territoryRegionIds[0]
+    if (!fallbackRegionId) return null
+    return { regionId: fallbackRegionId, entityId: regionControllerId(fallbackRegionId, homeId) }
+  }
+
   function handleClick(e: React.MouseEvent<HTMLCanvasElement>) {
     const rect = canvasRef.current!.getBoundingClientRect()
     const x = (e.clientX - rect.left - transform.x) / transform.k
@@ -447,8 +472,9 @@ export function MapView({
       const hits = regionSpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
       for (const hit of hits) {
         if (pointInFeature(x, y, hit.feature, projection)) {
-          const entityId = regionControllerId(hit.regionId, hit.feature.properties.countryIso3)
-          onSelectRegion(hit.regionId, entityId)
+          const resolved = resolveRegionHit(hit.feature)
+          if (!resolved) continue
+          onSelectRegion(resolved.regionId, resolved.entityId)
           return
         }
       }
@@ -481,9 +507,11 @@ export function MapView({
       const hits = regionSpatialIndex.search({ minX: x, minY: y, maxX: x, maxY: y })
       for (const hit of hits) {
         if (pointInFeature(x, y, hit.feature, projection)) {
-          const entityId = regionControllerId(hit.regionId, hit.feature.properties.countryIso3)
-          const name = worldState.entities[entityId]?.name
-          setHoverName(name ? `${hit.feature.properties.name} (${name})` : hit.feature.properties.name)
+          const resolved = resolveRegionHit(hit.feature)
+          if (!resolved) continue
+          const regionName = worldState.regions[hit.regionId]?.name ?? hit.feature.properties.name
+          const name = worldState.entities[resolved.entityId]?.name
+          setHoverName(name ? `${regionName} (${name})` : regionName)
           return
         }
       }

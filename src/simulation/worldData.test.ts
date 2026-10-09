@@ -27,11 +27,26 @@ describe('generated world data: disputed territory', () => {
     }
   })
 
-  it('gives Gaza and the West Bank their own distinct controlling body', () => {
+  it('plays the Palestinian Authority as a country governing the West Bank, with Hamas holding Gaza', () => {
     const state = createNewGame('USA')
+    const pa = state.entities.PSE
+    expect(pa.kind).toBe('country')
+    expect(pa.name).toBe('Palestinian Authority')
+    expect(state.regions['PSE-WBK'].controllerId).toBe('PSE')
     expect(state.regions['PSE-GAZA'].controllerId).toBe('ORG-HAMAS')
-    expect(state.regions['PSE-WBK'].controllerId).toBe('ORG-PA')
     expect(state.organizations['ORG-HAMAS'].hostEntityId).toBe('PSE')
-    expect(state.organizations['ORG-PA'].hostEntityId).toBe('PSE')
+    expect(state.organizations['ORG-PA']).toBeUndefined()
+    for (const id of pa.territoryRegionIds) expect(state.regions[id].contestedByIds).toContain('ISR')
+  })
+
+  it('plays Western Sahara as a country, including the Free Zone, still claimed by Morocco', () => {
+    const state = createNewGame('USA')
+    const esh = state.entities.ESH
+    expect(esh.kind).toBe('country')
+    expect(esh.territoryRegionIds).toContain('SAH+00?')
+    for (const id of esh.territoryRegionIds) {
+      expect(state.regions[id].disputed).toBe(true)
+      expect(state.regions[id].contestedByIds).toContain('MAR')
+    }
   })
 })

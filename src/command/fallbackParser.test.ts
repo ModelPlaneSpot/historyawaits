@@ -136,13 +136,13 @@ describe('actionValidator end-to-end via fallback parser', () => {
     expect(result.message).toContain('Hamas')
   })
 
-  it('rejects annexing Gaza without a war against its host country (Palestine)', async () => {
+  it('rejects annexing Gaza without a war against its host country (the Palestinian Authority)', async () => {
     const state = createNewGame('ISR')
     const parsed = await fallbackParser.parse('Annex Gaza', ctx(state, 'ISR'))
     expect(parsed.ok).toBe(true)
     const result = validateAndApplyPlan(state, parsed.plan!, 1)
     expect(result.ok).toBe(false)
-    expect(result.message).toContain('Palestine')
+    expect(result.message).toContain('Palestinian Authority')
   })
 
   it('executes the full "declare war, annex Gaza, dissolve Hamas" flow and mutates state correctly', async () => {

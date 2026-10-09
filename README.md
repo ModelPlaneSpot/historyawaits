@@ -2,7 +2,7 @@
 
 A browser-based geopolitical grand-strategy game. Command your nation with natural language — a small language model running entirely in your browser (no server, no API key, no recurring cost) translates it into a structured action that a deterministic simulation engine validates and applies.
 
-Covers ~195 sovereign countries plus a curated set of disputed/non-UN territories (Taiwan, Palestine, Western Sahara, Kosovo, Northern Cyprus, Somaliland), each with real admin-1 (state/province) borders, economy, military, government, and diplomacy simulation.
+Covers ~195 sovereign countries -- including the Palestinian Authority (West Bank; Gaza held by Hamas; contested by Israel) and Western Sahara (contested by Morocco), played as independent nations -- plus a curated set of disputed/non-UN territories (Taiwan, Kosovo, Northern Cyprus, Somaliland), each with real admin-1 (state/province) borders, economy, military, government, and diplomacy simulation.
 
 ## Calendar, turns & victory
 
@@ -92,6 +92,8 @@ node scripts/smoke-test-longplay.mjs [baseUrl] 40 # N-turn stability + news gene
 node scripts/smoke-test-ai.mjs [baseUrl]          # local AI enable flow (needs a real GPU to fully succeed)
 node scripts/smoke-test-advisor.mjs [baseUrl]     # AI Advisor panel open/close/enable-prompt flow
 node scripts/smoke-test-igpt.mjs [baseUrl]        # IGPT advice, executing a suggestion, world feed, autopilot
+node scripts/smoke-test-disputed-click.mjs [baseUrl] # clicking Gaza, West Bank, Western Sahara, Kosovo, South Sudan opens their country
+node scripts/smoke-test-new-nations.mjs [baseUrl]  # starting a game as the Palestinian Authority / Western Sahara
 ```
 
 ## Deployment

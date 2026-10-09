@@ -411,6 +411,9 @@ export const useGameStore = create<GameStore>((set, get) => ({
   },
 }))
 
+// Dev-only handle for the Playwright smoke tests (scripts/smoke-test-*.mjs).
+if (import.meta.env.DEV) (window as unknown as { __gameStore: typeof useGameStore }).__gameStore = useGameStore
+
 localAiEngine.onStatusChange((status, report) => {
   useGameStore.setState({ aiStatus: status, aiProgress: report ?? null })
 })
